@@ -31,15 +31,12 @@ fbturbo_drv_ladir = @moduledir@/drivers
 fbturbo_drv_la_SOURCES = \
          compat-api.h \
          uthash.h \
-         arm_asm.S \
          cpuinfo.c \
          cpuinfo.h \
          cpu_backend.c \
          cpu_backend.h \
          fb_copyarea.c \
          fb_copyarea.h \
-         backing_store_tuner.c \
-         backing_store_tuner.h \
          interfaces.h \
          fbdev.c \
          fbdev_priv.h \
@@ -54,8 +51,3 @@ fbturbo_drv_la_SOURCES = \
          sunxi_disp_ioctl.h \
          g2d_driver.h
 
-if HAVE_LIBUMP
-fbturbo_drv_la_SOURCES += \
-         sunxi_mali_ump_dri2.c \
-         sunxi_mali_ump_dri2.h
-endif

@@ -52,12 +52,7 @@
 #include "sunxi_disp.h"
 #include "sunxi_disp_hwcursor.h"
 #include "sunxi_x_g2d.h"
-#include "backing_store_tuner.h"
 #include "sunxi_video.h"
-
-#ifdef HAVE_LIBUMP
-#include "sunxi_mali_ump_dri2.h"
-#endif
 
 /* for visuals */
 #include "fb.h"
@@ -170,8 +165,6 @@ typedef enum {
 	OPTION_DRI2_OVERLAY,
 	OPTION_SWAPBUFFERS_WAIT,
 	OPTION_ACCELMETHOD,
-	OPTION_USE_BS,
-	OPTION_FORCE_BS,
 	OPTION_XV_OVERLAY,
 } FBDevOpts;
 
@@ -186,8 +179,6 @@ static const OptionInfoRec FBDevOptions[] = {
 	{ OPTION_DRI2_OVERLAY,	"DRI2HWOverlay",OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_SWAPBUFFERS_WAIT,"SwapbuffersWait",OPTV_BOOLEAN,{0},	FALSE },
 	{ OPTION_ACCELMETHOD,	"AccelMethod",	OPTV_STRING,	{0},	FALSE },
-	{ OPTION_USE_BS,	"UseBackingStore",OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_FORCE_BS,	"ForceBackingStore",OPTV_BOOLEAN,{0},	FALSE },
 	{ OPTION_XV_OVERLAY,	"XVHWOverlay",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ -1,			NULL,		OPTV_NONE,	{0},	FALSE }
 };
@@ -656,6 +647,17 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 	return TRUE;
 }
 
+static void
+fbdevUpdateRotatePacked(ScreenPtr pScreen, shadowBufPtr pBuf)
+{
+    shadowUpdateRotatePacked(pScreen, pBuf);
+}
+
+static void
+fbdevUpdatePacked(ScreenPtr pScreen, shadowBufPtr pBuf)
+{
+    shadowUpdatePacked(pScreen, pBuf);
+}
 
 static Bool
 FBDevCreateScreenResources(ScreenPtr pScreen)
@@ -675,7 +677,7 @@ FBDevCreateScreenResources(ScreenPtr pScreen)
     pPixmap = pScreen->GetScreenPixmap(pScreen);
 
     if (!shadowAdd(pScreen, pPixmap, fPtr->rotate ?
-		   shadowUpdateRotatePackedWeak() : shadowUpdatePackedWeak(),
+		   fbdevUpdateRotatePacked : fbdevUpdatePacked,
 		   FBDevWindowLinear, fPtr->rotate, NULL)) {
 	return FALSE;
     }
@@ -711,7 +713,6 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	int type;
 	char *accelmethod;
 	cpu_backend_t *cpu_backend;
-	Bool useBackingStore = FALSE, forceBackingStore = FALSE;
 
 	TRACE_ENTER("FBDevScreenInit");
 
@@ -878,37 +879,14 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 		xf86DrvMsg(pScrn->scrnIndex, X_WARNING,
 			   "Render extension initialisation failed\n");
 
-	/*
-	 * by default make use of backing store (the driver decides for which
-	 * windows it is beneficial) if shadow is not enabled.
-	 */
-	useBackingStore = xf86ReturnOptValBool(fPtr->Options, OPTION_USE_BS,
-	                                       !fPtr->shadowFB);
-#ifndef __arm__
-	/*
-	 * right now we can only make "smart" decisions on ARM hardware,
-	 * everything else (for example x86) would take a performance hit
-	 * unless backing store is just used for all windows.
-	 */
-	forceBackingStore = useBackingStore;
-#endif
-	/* but still honour the settings from xorg.conf */
-	forceBackingStore = xf86ReturnOptValBool(fPtr->Options, OPTION_FORCE_BS,
-	                                         forceBackingStore);
-
-	if (useBackingStore || forceBackingStore) {
-		fPtr->backing_store_tuner_private =
-			BackingStoreTuner_Init(pScreen, forceBackingStore);
-	}
-
 	/* initialize the 'CPU' backend */
 	cpu_backend = cpu_backend_init(fPtr->fbmem, pScrn->videoRam);
 	fPtr->cpu_backend_private = cpu_backend;
 
 	/* try to load G2D kernel module before initializing sunxi-disp */
-	if (!xf86LoadKernelModule("g2d_23"))
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "can't load 'g2d_23' kernel module\n");
+	//  if (!xf86LoadKernelModule("g2d_23"))
+	//  	xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+	//  	           "can't load 'g2d_23' kernel module\n");
 
 	fPtr->sunxi_disp_private = sunxi_disp_init(xf86FindOptionValue(
 	                                fPtr->pEnt->device->options,"fbdev"),
@@ -979,7 +957,8 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	  xf86DrvMsg(pScrn->scrnIndex, X_INFO, "display rotated; disabling DGA\n");
 	  xf86DrvMsg(pScrn->scrnIndex, X_INFO, "using driver rotation; disabling "
 			                "XRandR\n");
-	  xf86DisableRandR();
+	  // see: https://github.com/Vonger/vocore2/issues/21#issuecomment-915934209
+	  // xf86DisableRandR();
 	  if (pScrn->bitsPerPixel == 24)
 	    xf86DrvMsg(pScrn->scrnIndex, X_WARNING, "rotation might be broken at 24 "
                                              "bits per pixel\n");
@@ -1071,37 +1050,6 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 		           "failed to enable hardware cursor\n");
 	}
 
-#ifdef HAVE_LIBUMP
-	if (xf86ReturnOptValBool(fPtr->Options, OPTION_DRI2, TRUE)) {
-
-	    fPtr->SunxiMaliDRI2_private = SunxiMaliDRI2_Init(pScreen,
-		xf86ReturnOptValBool(fPtr->Options, OPTION_DRI2_OVERLAY, TRUE),
-		xf86ReturnOptValBool(fPtr->Options, OPTION_SWAPBUFFERS_WAIT, TRUE));
-
-	    if (fPtr->SunxiMaliDRI2_private) {
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "using DRI2 integration for Mali GPU (UMP buffers)\n");
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "Mali binary drivers can only accelerate EGL/GLES\n");
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "so AIGLX/GLX is expected to fail or fallback to software\n");
-	    }
-	    else {
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "failed to enable DRI2 integration for Mali GPU\n");
-	    }
-	}
-	else {
-	    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-	               "DRI2 integration for Mali GPU is disabled in xorg.conf\n");
-	}
-#else
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-	           "no 3D acceleration because the driver has been compiled without libUMP\n");
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-	           "if this is wrong and needs to be fixed, please check ./configure log\n");
-#endif
-
 	TRACE_EXIT("FBDevScreenInit");
 
 	return TRUE;
@@ -1112,14 +1060,6 @@ FBDevCloseScreen(CLOSE_SCREEN_ARGS_DECL)
 {
 	ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
 	FBDevPtr fPtr = FBDEVPTR(pScrn);
-
-#ifdef HAVE_LIBUMP
-	if (fPtr->SunxiMaliDRI2_private) {
-	    SunxiMaliDRI2_Close(pScreen);
-	    free(fPtr->SunxiMaliDRI2_private);
-	    fPtr->SunxiMaliDRI2_private = NULL;
-	}
-#endif
 
 	if (fPtr->SunxiDispHardwareCursor_private) {
 	    SunxiDispHardwareCursor_Close(pScreen);
@@ -1159,12 +1099,6 @@ FBDevCloseScreen(CLOSE_SCREEN_ARGS_DECL)
 	if (fPtr->cpu_backend_private) {
 	    cpu_backend_close(fPtr->cpu_backend_private);
 	    fPtr->cpu_backend_private = NULL;
-	}
-
-	if (fPtr->backing_store_tuner_private) {
-	    BackingStoreTuner_Close(pScreen);
-	    free(fPtr->backing_store_tuner_private);
-	    fPtr->backing_store_tuner_private = NULL;
 	}
 
 	if (fPtr->pDGAMode) {
