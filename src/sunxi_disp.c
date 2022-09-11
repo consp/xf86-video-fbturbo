@@ -29,10 +29,15 @@
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <stdbool.h>
 
 #include "sunxi_disp.h"
-#include "sunxi_disp_ioctl.h"
+// #include "sunxi_disp_ioctl.h"
+#include "sunxi_display2.h"
 #include "g2d_driver.h"
+
+// for debug only
+#include <xorg/xf86.h>
 
 /*****************************************************************************/
 
@@ -45,6 +50,8 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
     int tmp, version;
     int gfx_layer_size;
     int ovl_layer_size;
+
+    xf86DrvMsg(0, X_INFO, "sunxi_disp_init: begin\n");
 
     /* use /dev/fb0 by default */
     if (!device)
@@ -73,14 +80,7 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
         return NULL;
     }
 
-    /* version check */
-    tmp = SUNXI_DISP_VERSION;
-    version = ioctl(ctx->fd_disp, DISP_CMD_VERSION, &tmp);
-    if (version < 0) {
-        close(ctx->fd_disp);
-        free(ctx);
-        return NULL;
-    }
+    /* display2 has no version check */
 
     ctx->fd_fb = open(device, O_RDWR);
     if (ctx->fd_fb < 0) {
@@ -114,6 +114,8 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
         return NULL;
     }
 
+    xf86DrvMsg(0, X_INFO, "sunxi_disp_init: check fb size ok\n");
+
     if (ctx->xserver_fbmem) {
         /* use already existing mapping */
         ctx->framebuffer_addr = ctx->xserver_fbmem;
@@ -130,10 +132,6 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
             return NULL;
         }
     }
-
-    ctx->cursor_enabled = 0;
-    ctx->cursor_x = -1;
-    ctx->cursor_y = -1;
 
     /* Get the id of the screen layer */
     if (ioctl(ctx->fd_fb,
@@ -176,9 +174,6 @@ int sunxi_disp_close(sunxi_disp_t *ctx)
         }
         /* release layer */
         sunxi_layer_release(ctx);
-        /* disable cursor */
-        if (ctx->cursor_enabled)
-            sunxi_hw_cursor_hide(ctx);
         /* close descriptors */
         if (!ctx->xserver_fbmem)
             munmap(ctx->framebuffer_addr, ctx->framebuffer_size);
@@ -191,91 +186,13 @@ int sunxi_disp_close(sunxi_disp_t *ctx)
 }
 
 /*****************************************************************************
- * Support for hardware cursor, which has 64x64 size, 2 bits per pixel,      *
- * four 32-bit ARGB entries in the palette.                                  *
- *****************************************************************************/
-
-int sunxi_hw_cursor_load_64x64x2bpp(sunxi_disp_t *ctx, uint8_t pixeldata[1024])
-{
-    uint32_t tmp[4];
-    __disp_hwc_pattern_t hwc;
-    hwc.addr = (uintptr_t)&pixeldata[0];
-    hwc.pat_mode = DISP_HWC_MOD_H64_V64_2BPP;
-    tmp[0] = ctx->fb_id;
-    tmp[1] = (uintptr_t)&hwc;
-    return ioctl(ctx->fd_disp, DISP_CMD_HWC_SET_FB, &tmp);
-}
-
-int sunxi_hw_cursor_load_32x32x8bpp(sunxi_disp_t *ctx, uint8_t pixeldata[1024])
-{
-    uint32_t tmp[4];
-    __disp_hwc_pattern_t hwc;
-    hwc.addr = (uintptr_t)&pixeldata[0];
-    hwc.pat_mode = DISP_HWC_MOD_H32_V32_8BPP;
-    tmp[0] = ctx->fb_id;
-    tmp[1] = (uintptr_t)&hwc;
-    return ioctl(ctx->fd_disp, DISP_CMD_HWC_SET_FB, &tmp);
-}
-
-int sunxi_hw_cursor_load_palette(sunxi_disp_t *ctx, uint32_t *palette, int n)
-{
-    uint32_t tmp[4];
-    tmp[0] = ctx->fb_id;
-    tmp[1] = (uintptr_t)palette;
-    tmp[2] = 0;
-    tmp[3] = n * sizeof(uint32_t);
-    return ioctl(ctx->fd_disp, DISP_CMD_HWC_SET_PALETTE_TABLE, &tmp);
-}
-
-int sunxi_hw_cursor_set_position(sunxi_disp_t *ctx, int x, int y)
-{
-    int result;
-    uint32_t tmp[4];
-    __disp_pos_t pos = { x, y };
-    tmp[0] = ctx->fb_id;
-    tmp[1] = (uintptr_t)&pos;
-    if (pos.x < 0)
-        pos.x = 0;
-    if (pos.y < 0)
-        pos.y = 0;
-    result = ioctl(ctx->fd_disp, DISP_CMD_HWC_SET_POS, &tmp);
-    if (result >= 0) {
-        ctx->cursor_x = pos.x;
-        ctx->cursor_y = pos.y;
-    }
-    return result;
-}
-
-int sunxi_hw_cursor_show(sunxi_disp_t *ctx)
-{
-    int result;
-    uint32_t tmp[4];
-    tmp[0] = ctx->fb_id;
-    result = ioctl(ctx->fd_disp, DISP_CMD_HWC_OPEN, &tmp);
-    if (result >= 0)
-        ctx->cursor_enabled = 1;
-    return result;
-}
-
-int sunxi_hw_cursor_hide(sunxi_disp_t *ctx)
-{
-    int result;
-    uint32_t tmp[4];
-    tmp[0] = ctx->fb_id;
-    result = ioctl(ctx->fd_disp, DISP_CMD_HWC_CLOSE, &tmp);
-    if (result >= 0)
-        ctx->cursor_enabled = 0;
-    return result;
-}
-
-/*****************************************************************************
  * Support for scaled layers                                                 *
  *****************************************************************************/
 
 static int sunxi_layer_change_work_mode(sunxi_disp_t *ctx, int new_mode)
 {
-    __disp_layer_info_t layer_info;
-    uint32_t tmp[4];
+    struct disp_layer_info layer_info;
+    uint64_t tmp[4];
 
     if (ctx->layer_id < 0)
         return -1;
@@ -283,7 +200,7 @@ static int sunxi_layer_change_work_mode(sunxi_disp_t *ctx, int new_mode)
     tmp[0] = ctx->fb_id;
     tmp[1] = ctx->layer_id;
     tmp[2] = (uintptr_t)&layer_info;
-    if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_GET_PARA, tmp) < 0)
+    if (ioctl(ctx->fd_disp, DISP_LAYER_GET_INFO, tmp) < 0)
         return -1;
 
     layer_info.mode = new_mode;
@@ -291,13 +208,13 @@ static int sunxi_layer_change_work_mode(sunxi_disp_t *ctx, int new_mode)
     tmp[0] = ctx->fb_id;
     tmp[1] = ctx->layer_id;
     tmp[2] = (uintptr_t)&layer_info;
-    return ioctl(ctx->fd_disp, DISP_CMD_LAYER_SET_PARA, tmp);
+    return ioctl(ctx->fd_disp, DISP_LAYER_GET_INFO, tmp);
 }
 
 int sunxi_layer_reserve(sunxi_disp_t *ctx)
 {
-    __disp_layer_info_t layer_info;
-    uint32_t tmp[4];
+    struct disp_layer_info layer_info;
+    uint64_t tmp[4];
 
     /* try to allocate a layer */
 
@@ -312,7 +229,7 @@ int sunxi_layer_reserve(sunxi_disp_t *ctx)
     tmp[0] = ctx->fb_id;
     tmp[1] = ctx->layer_id;
     tmp[2] = (uintptr_t)&layer_info;
-    if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_GET_PARA, tmp) < 0)
+    if (ioctl(ctx->fd_disp, DISP_LAYER_GET_INFO, tmp) < 0)
         return -1;
 
     /* the screen and overlay layers need to be in different pipes */
@@ -349,7 +266,7 @@ int sunxi_layer_reserve(sunxi_disp_t *ctx)
 int sunxi_layer_release(sunxi_disp_t *ctx)
 {
     int result;
-    uint32_t tmp[4];
+    uint64_t tmp[4];
 
     if (ctx->layer_id < 0)
         return -1;
@@ -372,7 +289,7 @@ int sunxi_layer_set_rgb_input_buffer(sunxi_disp_t *ctx,
 {
     __disp_fb_t fb;
     __disp_rect_t rect = { 0, 0, width, height };
-    uint32_t tmp[4];
+    uint64_t tmp[4];
     memset(&fb, 0, sizeof(fb));
 
     if (ctx->layer_id < 0)
@@ -431,7 +348,7 @@ int sunxi_layer_set_yuv420_input_buffer(sunxi_disp_t *ctx,
 {
     __disp_fb_t fb;
     __disp_rect_t rect = { x_pixel_offset, y_pixel_offset, width, height };
-    uint32_t tmp[4];
+    uint64_t tmp[4];
     memset(&fb, 0, sizeof(fb));
 
     if (ctx->layer_id < 0)
@@ -478,7 +395,7 @@ int sunxi_layer_set_output_window(sunxi_disp_t *ctx, int x, int y, int w, int h)
         ctx->layer_buf_w, ctx->layer_buf_h
     };
     __disp_rect_t win_rect = { x, y, w, h };
-    uint32_t tmp[4];
+    uint64_t tmp[4];
     int err;
 
     if (ctx->layer_id < 0 || w <= 0 || h <= 0)
@@ -539,7 +456,7 @@ int sunxi_layer_set_output_window(sunxi_disp_t *ctx, int x, int y, int w, int h)
 
 int sunxi_layer_show(sunxi_disp_t *ctx)
 {
-    uint32_t tmp[4];
+    uint64_t tmp[4];
 
     if (ctx->layer_id < 0)
         return -1;
@@ -558,7 +475,7 @@ int sunxi_layer_show(sunxi_disp_t *ctx)
 int sunxi_layer_hide(sunxi_disp_t *ctx)
 {
     int result;
-    uint32_t tmp[4];
+    uint64_t tmp[4];
 
     if (ctx->layer_id < 0)
         return -1;
@@ -576,7 +493,7 @@ int sunxi_layer_hide(sunxi_disp_t *ctx)
 
 int sunxi_layer_set_colorkey(sunxi_disp_t *ctx, uint32_t color)
 {
-    uint32_t tmp[4];
+    uint64_t tmp[4];
     __disp_colorkey_t colorkey;
     __disp_color_t disp_color;
 
@@ -629,7 +546,7 @@ int sunxi_layer_set_colorkey(sunxi_disp_t *ctx, uint32_t color)
 
 int sunxi_layer_disable_colorkey(sunxi_disp_t *ctx)
 {
-    uint32_t tmp[4];
+    uint64_t tmp[4];
 
     /* Disable color key for the overlay layer */
     tmp[0] = ctx->fb_id;
