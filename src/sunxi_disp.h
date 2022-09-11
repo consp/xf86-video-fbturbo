@@ -29,8 +29,7 @@
 #include "interfaces.h"
 
 /*
- * Support for Allwinner A10 display controller features such as layers
- * and hardware cursor
+ * Support for Allwinner D1 display controller features such as layers
  */
 typedef struct {
     int                 fd_fb;
@@ -46,10 +45,6 @@ typedef struct {
     uint32_t            gfx_layer_size;    /* the size of the primary layer */
 
     uint8_t            *xserver_fbmem; /* framebuffer mapping done by xserver */
-
-    /* Hardware cursor support */
-    int                 cursor_enabled;
-    int                 cursor_x, cursor_y;
 
     /* Layers support */
     int                 gfx_layer_id;
@@ -69,17 +64,6 @@ typedef struct {
 
 sunxi_disp_t *sunxi_disp_init(const char *fb_device, void *xserver_fbmem);
 int sunxi_disp_close(sunxi_disp_t *ctx);
-
-/*
- * Support for hardware cursor, which has 64x64 size, 2 bits per pixel,
- * four 32-bit ARGB entries in the palette.
- */
-int sunxi_hw_cursor_load_64x64x2bpp(sunxi_disp_t *ctx, uint8_t pixeldata[1024]);
-int sunxi_hw_cursor_load_32x32x8bpp(sunxi_disp_t *ctx, uint8_t pixeldata[1024]);
-int sunxi_hw_cursor_load_palette(sunxi_disp_t *ctx, uint32_t *palette, int n);
-int sunxi_hw_cursor_set_position(sunxi_disp_t *ctx, int x, int y);
-int sunxi_hw_cursor_show(sunxi_disp_t *ctx);
-int sunxi_hw_cursor_hide(sunxi_disp_t *ctx);
 
 /*
  * Support for one sunxi disp layer (even though there are more than

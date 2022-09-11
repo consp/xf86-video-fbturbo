@@ -50,7 +50,6 @@
 #include "fb_copyarea.h"
 
 #include "sunxi_disp.h"
-#include "sunxi_disp_hwcursor.h"
 #include "sunxi_x_g2d.h"
 #include "sunxi_video.h"
 
@@ -159,10 +158,6 @@ typedef enum {
 	OPTION_ROTATE,
 	OPTION_FBDEV,
 	OPTION_DEBUG,
-	OPTION_HW_CURSOR,
-	OPTION_SW_CURSOR,
-	OPTION_DRI2,
-	OPTION_DRI2_OVERLAY,
 	OPTION_SWAPBUFFERS_WAIT,
 	OPTION_ACCELMETHOD,
 	OPTION_XV_OVERLAY,
@@ -173,10 +168,6 @@ static const OptionInfoRec FBDevOptions[] = {
 	{ OPTION_ROTATE,	"Rotate",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_FBDEV,		"fbdev",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_DEBUG,		"debug",	OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_HW_CURSOR,	"HWCursor",	OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_SW_CURSOR,	"SWCursor",	OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_DRI2,		"DRI2",		OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_DRI2_OVERLAY,	"DRI2HWOverlay",OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_SWAPBUFFERS_WAIT,"SwapbuffersWait",OPTV_BOOLEAN,{0},	FALSE },
 	{ OPTION_ACCELMETHOD,	"AccelMethod",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_XV_OVERLAY,	"XVHWOverlay",	OPTV_BOOLEAN,	{0},	FALSE },
@@ -1034,21 +1025,6 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	    }
 	}
 #endif
-
-	if (fPtr->rotate == FBDEV_ROTATE_NONE &&
-	    !xf86ReturnOptValBool(fPtr->Options, OPTION_SW_CURSOR, FALSE) &&
-	     xf86ReturnOptValBool(fPtr->Options, OPTION_HW_CURSOR, TRUE)) {
-
-	    fPtr->SunxiDispHardwareCursor_private = SunxiDispHardwareCursor_Init(
-	                                pScreen);
-
-	    if (fPtr->SunxiDispHardwareCursor_private)
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "using hardware cursor\n");
-	    else
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "failed to enable hardware cursor\n");
-	}
 
 	TRACE_EXIT("FBDevScreenInit");
 
