@@ -213,6 +213,50 @@ void fillrect_soft(uint32_t *vaddr, int x, int y, int w, int h, uint32_t color) 
   }
 }
 
+void rotate(int g2dfd,
+    unsigned long src_paddr,
+    unsigned long dst_paddr) {
+  g2d_blt_h tmp;
+  memset(&tmp, 0, sizeof(tmp));
+  tmp.flag_h = G2D_ROT_90;
+  tmp.src_image_h.use_phy_addr = 1;
+  tmp.src_image_h.width = 1280;
+  tmp.src_image_h.height = 480;
+  tmp.src_image_h.align[0] = 4;
+  tmp.src_image_h.laddr[0] = src_paddr;
+  tmp.src_image_h.alpha = 0xFF;
+  tmp.src_image_h.format = G2D_FORMAT_ARGB8888;
+  tmp.src_image_h.mode = G2D_PIXEL_ALPHA;
+  tmp.src_image_h.clip_rect.x = 0;
+  tmp.src_image_h.clip_rect.y = 0;
+  tmp.src_image_h.clip_rect.w = 1280;
+  tmp.src_image_h.clip_rect.h = 480;
+
+  tmp.dst_image_h.use_phy_addr = 1;
+  tmp.dst_image_h.width = 480;
+  tmp.dst_image_h.height = 1280;
+  tmp.dst_image_h.align[0] = 4;
+  tmp.dst_image_h.laddr[0] = dst_paddr;
+  tmp.dst_image_h.alpha = 0xFF;
+  tmp.dst_image_h.format = G2D_FORMAT_ARGB8888;
+  tmp.dst_image_h.mode = G2D_PIXEL_ALPHA;
+  tmp.dst_image_h.clip_rect.x = 0;
+  tmp.dst_image_h.clip_rect.y = 0;
+  tmp.dst_image_h.clip_rect.w = 480;
+  tmp.dst_image_h.clip_rect.h = 1280;
+
+  int res = ioctl(g2dfd, G2D_CMD_BITBLT_H, &tmp);
+  /*PRINTD(res);*/
+}
+
+void rotate_soft(uint32_t* src, uint32_t* dst) {
+  for (int i = 0; i < 1280; ++i) {
+    for (int j = 0; j < 480; ++j) {
+      dst[i * 480 + j] = src[j * 1280 + i];
+    }
+  }
+}
+
 void fill_test(uint32_t* vaddr, int g2dfd, unsigned long paddr, int fill_w, int fill_h, int fill_n) {
   struct timeval t0, t1;
   double elapsed;
@@ -253,6 +297,35 @@ void fill_test(uint32_t* vaddr, int g2dfd, unsigned long paddr, int fill_w, int 
   elapsed += (t1.tv_usec - t0.tv_usec) / 1000.0;
   printf("TIME = %lfms.\n", elapsed);
 
+}
+
+void rotate_test(uint32_t *mem_in, uint32_t *mem_in2,
+    unsigned long paddr, unsigned long paddr_2, int g2dfd) {
+  struct timeval t0, t1;
+  double elapsed;
+
+  int nframe = 60;
+
+  printf(" ========== rotate_test =========== \n");
+  printf(" >>> software rotate: ");
+  gettimeofday(&t0, NULL);
+  for(int i = 0; i < nframe; ++i) {
+    rotate_soft(mem_in, mem_in2);
+  }
+  gettimeofday(&t1, NULL);
+  elapsed = (t1.tv_sec - t0.tv_sec) * 1000.0;
+  elapsed += (t1.tv_usec - t0.tv_usec) / 1000.0;
+  printf("TIME = %lfms. FPS = %lf.\n", elapsed, nframe / (elapsed / 1000.0));
+
+  printf(" >>> hardware rotate: ");
+  gettimeofday(&t0, NULL);
+  for(int i = 0; i < nframe; ++i) {
+    rotate(g2dfd, paddr, paddr_2);
+  }
+  gettimeofday(&t1, NULL);
+  elapsed = (t1.tv_sec - t0.tv_sec) * 1000.0;
+  elapsed += (t1.tv_usec - t0.tv_usec) / 1000.0;
+  printf("TIME = %lfms. FPS = %lf.\n", elapsed, nframe / (elapsed / 1000.0));
 }
 
 int main() {
@@ -296,8 +369,8 @@ int main() {
   // uint32_t* mem_in = malloc(1280 * 480 * 4); <<- doesn't work. need to pass in physical addr
   for (int y = 0; y < 480; ++y) {
     for (int x = 0; x < 1280; ++x) {
-      mem_in[x + y * 1280] = x & 0xFF + 0xFF000000;
-      mem_in2[x + y * 1280] = x & 0xFF + 0xFF000000;
+      mem_in[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;
+      mem_in2[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;
       // mem_in[x + y * 480] = 0xFFFFFFFF;
       // mem_in[x + y * 480] = 0;
     }
@@ -305,27 +378,34 @@ int main() {
 
   disp_layer_set_config(dispfd, (uint32_t*)paddr_2);
   system("dmesg | tail");
-  printf("anykey to proceed to fillrect test\n");
-  getchar();
-
-  srand(time(NULL));
-  fill_test(mem_in2, g2dfd, paddr_2, 10, 10, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 10, 20, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 30, 30, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 30, 40, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 50, 50, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 50, 60, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 70, 70, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 70, 80, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 90, 90, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 90, 100, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 200, 200, 10000);
-  fill_test(mem_in2, g2dfd, paddr_2, 300, 300, 10000);
-
   printf("anykey\n");
   getchar();
+
+  if (0) {
+    printf("anykey to proceed to fillrect test\n");
+    getchar();
+
+    srand(time(NULL));
+    fill_test(mem_in2, g2dfd, paddr_2, 10, 10, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 30, 30, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 50, 50, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 70, 70, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 90, 90, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 200, 200, 10000);
+    fill_test(mem_in2, g2dfd, paddr_2, 300, 300, 10000);
+
+    printf("anykey\n");
+    getchar();
+  }
+
+  // note: in-place rotation is not supported.
+  if (1) {
+    rotate_test(mem_in, mem_in2, paddr, paddr_2, g2dfd);
+    printf("anykey\n");
+    getchar();
+  }
 
   system("dmesg | tail");
   close(fbfd);
