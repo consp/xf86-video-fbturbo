@@ -1,12 +1,14 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/time.h>
 #include <linux/fb.h>
 
 #include "sunxi_display2.h"
@@ -167,35 +169,91 @@ void fb_info(int fbfd, unsigned long *paddr, __u32 *psize) {
   *psize = fb_fix.smem_len;
 }
 
-int sunxi_g2d_fill(int g2dfd,
-                   void* paddr,
-                   int x,
-                   int y,
-                   int w,
-                   int h,
-                   uint32_t color)
+void fillrect(int g2dfd,
+             unsigned long paddr,
+             int x,
+             int y,
+             int w,
+             int h,
+             uint32_t color)
 {
-    g2d_fillrect tmp;
+    g2d_fillrect_h tmp;
+    memset(&tmp, 0, sizeof(tmp));
 
     if (w <= 0 || h <= 0)
-        return 0;
+        return;
 
-    tmp.flag                = G2D_FIL_NONE;
-    tmp.dst_image.addr[0]   = paddr;
-    tmp.dst_image.w         = disp->xres;
-    tmp.dst_image.h         = disp->framebuffer_height;
-    tmp.dst_image.format    = G2D_FMT_ARGB_AYUV8888;
-    tmp.dst_image.pixel_seq = G2D_SEQ_NORMAL;
-    tmp.dst_rect.x          = x;
-    tmp.dst_rect.y          = y;
-    tmp.dst_rect.w          = w;
-    tmp.dst_rect.h          = h;
-    tmp.color               = color;
-    tmp.alpha               = 0;
+    tmp.dst_image_h.format = G2D_FORMAT_ARGB8888;
+    tmp.dst_image_h.height = 1280;
+    tmp.dst_image_h.width = 480;
+    tmp.dst_image_h.color = color;
+    tmp.dst_image_h.align[0] = 4;
+    tmp.dst_image_h.laddr[0] = paddr;
+    tmp.dst_image_h.alpha = 0xFF;
+    tmp.dst_image_h.mode = G2D_PIXEL_ALPHA;
+    tmp.dst_image_h.clip_rect.x = x;
+    tmp.dst_image_h.clip_rect.y = y;
+    tmp.dst_image_h.clip_rect.w = w;
+    tmp.dst_image_h.clip_rect.h = h;
+    tmp.dst_image_h.use_phy_addr = 1;
 
-    return ioctl(g2dfd, G2D_CMD_FILLRECT, &tmp);
+    int res = ioctl(g2dfd, G2D_CMD_FILLRECT_H, &tmp);
+    /*PRINTD(res);*/
 }
 
+void fillrect_soft(uint32_t *vaddr, int x, int y, int w, int h, uint32_t color) {
+  vaddr = vaddr + y * 480 + x;
+  // CRLF wink wink
+  int crlf = 480 - w;
+  for (int i = 0; i < h; ++i) {
+    for (int j = 0; j < w; ++j) {
+      *vaddr++ = color;
+    }
+    vaddr += crlf;
+  }
+}
+
+void fill_test(uint32_t* vaddr, int g2dfd, unsigned long paddr, int fill_w, int fill_h, int fill_n) {
+  struct timeval t0, t1;
+  double elapsed;
+
+  int rand_xmax = 480 - fill_w;
+  int rand_ymax = 1280 - fill_h;
+
+  printf(" ========== fill_test, w=%d h=%d n=%d =========== \n", fill_w, fill_h, fill_n);
+
+  printf(" >>> software fillrect: ");
+  gettimeofday(&t0, NULL);
+  for (int __x = 0; __x < fill_n; ++__x) {
+    int x = rand() % (rand_xmax);
+    int y = rand() % (rand_ymax);
+    int color_r = (rand() & 0xff) << 16;
+    int color_g = (rand() & 0xff) << 8;
+    int color_b = rand() & 0xff;
+    fillrect_soft(vaddr, x, y, fill_w, fill_h, 0xFF000000 | color_r | color_g | color_b);
+  }
+  gettimeofday(&t1, NULL);
+  elapsed = (t1.tv_sec - t0.tv_sec) * 1000.0;
+  elapsed += (t1.tv_usec - t0.tv_usec) / 1000.0;
+  printf("TIME = %lfms.\n", elapsed);
+
+
+  printf(" >>> hardware fillrect: ");
+  gettimeofday(&t0, NULL);
+  for (int __x = 0; __x < fill_n; ++__x) {
+    int x = rand() % (rand_xmax);
+    int y = rand() % (rand_ymax);
+    int color_r = (rand() & 0xff) << 16;
+    int color_g = (rand() & 0xff) << 8;
+    int color_b = rand() & 0xff;
+    fillrect(g2dfd, paddr, x, y, fill_w, fill_h, 0xFF000000 | color_r | color_g | color_b);
+  }
+  gettimeofday(&t1, NULL);
+  elapsed = (t1.tv_sec - t0.tv_sec) * 1000.0;
+  elapsed += (t1.tv_usec - t0.tv_usec) / 1000.0;
+  printf("TIME = %lfms.\n", elapsed);
+
+}
 
 int main() {
   int dispfd = open("/dev/disp", O_RDWR);
@@ -207,6 +265,14 @@ int main() {
   int fbfd = open("/dev/fb0", O_RDWR);
   printf("fbfd=%d\n", fbfd);
   if (fbfd < 0) {
+    close(dispfd);
+    exit(-1);
+  }
+
+  int g2dfd = open("/dev/g2d", O_RDWR);
+  printf("g2dfd=%d\n", fbfd);
+  if (g2dfd < 0) {
+    close(fbfd);
     close(dispfd);
     exit(-1);
   }
@@ -231,6 +297,7 @@ int main() {
   for (int y = 0; y < 480; ++y) {
     for (int x = 0; x < 1280; ++x) {
       mem_in[x + y * 1280] = x & 0xFF + 0xFF000000;
+      mem_in2[x + y * 1280] = x & 0xFF + 0xFF000000;
       // mem_in[x + y * 480] = 0xFFFFFFFF;
       // mem_in[x + y * 480] = 0;
     }
@@ -238,15 +305,29 @@ int main() {
 
   disp_layer_set_config(dispfd, (uint32_t*)paddr_2);
   system("dmesg | tail");
+  printf("anykey to proceed to fillrect test\n");
+  getchar();
+
+  srand(time(NULL));
+  fill_test(mem_in2, g2dfd, paddr_2, 10, 10, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 10, 20, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 30, 30, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 30, 40, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 50, 50, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 50, 60, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 70, 70, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 70, 80, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 90, 90, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 90, 100, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 200, 200, 10000);
+  fill_test(mem_in2, g2dfd, paddr_2, 300, 300, 10000);
 
   printf("anykey\n");
   getchar();
 
-  g2d_fillrect(
-
-  printf("anykey\n");
-  getchar();
-
+  system("dmesg | tail");
   close(fbfd);
   close(dispfd);
 	return 0;

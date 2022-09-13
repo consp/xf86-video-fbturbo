@@ -1,3 +1,3 @@
 all:
 	cc main.c
-	./a.out
+	sudo ./a.out
