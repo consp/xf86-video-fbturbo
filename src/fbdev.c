@@ -952,12 +952,6 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 		}
 	}
 
-	if (!fPtr->SunxiG2D_private && cpu_backend->cpuinfo->has_arm_vfp) {
-		if ((fPtr->SunxiG2D_private = SunxiG2D_Init(pScreen, &cpu_backend->blt2d))) {
-			xf86DrvMsg(pScrn->scrnIndex, X_INFO, "enabled VFP/NEON optimizations\n");
-		}
-	}
-
 	if (fPtr->shadowFB && !FBDevShadowInit(pScreen)) {
 	    xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
 		       "shadow framebuffer initialization failed\n");
