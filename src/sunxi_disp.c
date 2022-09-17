@@ -37,9 +37,15 @@
 #include "g2d_driver.h"
 
 // for debug only
+#if 1
 #include <xorg/xf86.h>
 #define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s L%d\n", __PRETTY_FUNCTION__, __LINE__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
+#else
+#define PRINTLINE() {}
+#define PRINTD(x) {}
+#define xf86DrvMsg(...) {}
+#endif
 
 /*****************************************************************************/
 
@@ -773,8 +779,6 @@ int sunxi_g2d_blt(void               *self,
                   int                 w,
                   int                 h)
 {
-    return FALLBACK_BLT();
-
     sunxi_disp_t *disp = (sunxi_disp_t *)self;
     int blt_size_threshold;
     g2d_blt_h tmp;
@@ -816,10 +820,15 @@ int sunxi_g2d_blt(void               *self,
         return FALLBACK_BLT();
 
     /* Unsupported overlapping type */
-    /*if (src_bits == dst_bits && src_y == dst_y && src_x + 1 < dst_x) {*/
-        /*PRINTLINE();*/
-        /*return FALLBACK_BLT();*/
-    /*}*/
+    if (src_bits == dst_bits && src_y == dst_y && src_x + 1 < dst_x) {
+        PRINTLINE();
+        return FALLBACK_BLT();
+    }
+
+    if (src_y != dst_y && src_x != dst_x) {
+        PRINTLINE();
+        return FALLBACK_BLT();
+    }
 
     if (disp->fd_g2d < 0)
         return FALLBACK_BLT();
@@ -881,11 +890,7 @@ int sunxi_g2d_blt(void               *self,
     tmp.dst_image_h.clip_rect.w = w;
     tmp.dst_image_h.clip_rect.h = h;
 
-    if (ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &tmp) < 0) {
-      PRINTLINE();
-      return -1;
-    }
-    return 0;
+    return (ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &tmp) == 0);
 
     //  tmp.flag                    = G2D_BLT_NONE;
     //  tmp.src_image.addr[0]       = disp->framebuffer_paddr +
