@@ -50,12 +50,27 @@ void output_type(int dispfd) {
   PRINTD(mode);
 }
 
-void device_switch(int dispfd) {
+// gone in disp2. won't work
+void disp_layer_get_info(int dispfd) {
+  struct disp_layer_info layer_info;
+  unsigned long arg[3];
+
+  printf("disp_layer_get_info\n");
+
+  arg[0] = 0; //screen
+  arg[1] = 0; // layer
+  arg[2] = (uintptr_t)&layer_info;
+  int ret = ioctl(dispfd, DISP_LAYER_GET_INFO, arg);
+
+  PRINTD(ret);
+}
+
+void device_switch(int dispfd, unsigned long type) {
   printf("切换\n");
   unsigned long arg[3];
-  arg[0] = 0;
-  arg[1] = (unsigned long)DISP_OUTPUT_TYPE_LCD;
-  arg[2] = 0;
+  arg[0] = 0; // display id [0/1]
+  arg[1] = type; // disp_output_type
+  arg[2] = 0; // disp_tv_mode
   int result = ioctl(dispfd, DISP_DEVICE_SWITCH, (void*)arg);
   PRINTD(result);
   // 说明：如果传递的type 是DISP_OUTPUT_TYPE_NONE，将会关闭当前显示通道的输出
@@ -99,19 +114,45 @@ void device_get_config(int dispfd) {
 void disp_layer_get_config(int dispfd) {
   printf("获取图层参数，dispfd为显示驱动句柄\n");
   unsigned long arg[3];
-  struct disp_layer_config config;
+  struct disp_layer_config config[4];
   // the buffer has to be zeroed. it seems ioctl is using the indices in the config struct
   // to retrieve corresponding layers, rather than copying them sequentially...
-  memset(&config, 0, sizeof(struct disp_layer_config));
+  memset(&config, 0, sizeof(config));
+  for (int i=0;i<4;++i) {
+    config[i].layer_id = i;
+  }
   arg[0] = 0;//screen 0
   arg[1] = (uintptr_t)&config;
-  arg[2] = 1;//cnt
+  arg[2] = 4;//cnt
   int ret = ioctl(dispfd, DISP_LAYER_GET_CONFIG, (void*)arg);
   PRINTD(ret);
-  PRINTD(config.channel);
-  PRINTD(config.layer_id);
-  PRINTD(config.enable);
-  PRINTD(config.info.mode);
+  for (int i = 0; i < 4; ++i) {
+    PRINTD(i);
+    PRINTD(config[i].channel);
+    PRINTD(config[i].layer_id);
+    PRINTD(config[i].enable);
+    PRINTD(config[i].info.mode);
+    PRINTLX((uintptr_t)config[i].info.fb.addr);
+  }
+}
+
+void disp_layer_disable(int dispfd) {
+  printf("禁用图层0\n");
+  unsigned long arg[3];
+  struct disp_layer_config config;
+  unsigned int ret = 0;
+  memset(&config, 0, sizeof(struct disp_layer_config));
+  config.channel = 0;//blending channel
+  config.layer_id = 0;//layer index in the blending channel
+  config.enable = 0;
+  config.info.mode = LAYER_MODE_BUFFER;
+  config.info.fb.align[0] = 4;//bytes
+  config.info.id = 0;
+  arg[0] = 0;//screen 0
+  arg[1] = (unsigned long)&config;
+  arg[2] = 1; //one layer
+  ret = ioctl(dispfd, DISP_LAYER_SET_CONFIG, (void*)arg);
+  PRINTD(ret);
 }
 
 // works. can map back the framebuffer memory!
@@ -159,7 +200,7 @@ void fb_info(int fbfd, unsigned long *paddr, __u32 *psize) {
 
   if (ioctl(fbfd, FBIOGET_VSCREENINFO, &fb_var) < 0
       || ioctl(fbfd, FBIOGET_FSCREENINFO, &fb_fix) < 0) {
-    printf("ioctl fail\n");
+    printf("screeninfo ioctl fail\n");
   }
 
   PRINTLX(fb_fix.smem_start);
@@ -167,6 +208,17 @@ void fb_info(int fbfd, unsigned long *paddr, __u32 *psize) {
 
   *paddr = fb_fix.smem_start;
   *psize = fb_fix.smem_len;
+
+  int gfx_layer_id0;
+  int gfx_layer_id1;
+  if (ioctl(fbfd, FBIOGET_LAYER_HDL_0, &gfx_layer_id0) < 0) {
+    printf("ioctl layer hdl 0 fail\n");
+  }
+  PRINTD(gfx_layer_id0);
+  if (ioctl(fbfd, FBIOGET_LAYER_HDL_1, &gfx_layer_id1) < 0) {
+    printf("ioctl layer hdl 1 fail\n");
+  }
+  PRINTD(gfx_layer_id1);
 }
 
 void fillrect(int g2dfd,
@@ -249,6 +301,44 @@ void rotate(int g2dfd,
   /*PRINTD(res);*/
 }
 
+void bitblt(int g2dfd,
+    unsigned long paddr,
+    int src_x, int src_y, int dst_x, int dst_y, int w, int h) {
+  g2d_blt_h tmp;
+    memset(&tmp, 0, sizeof(tmp));
+    //if (src_is_shadow && dst_is_shadow) {
+    tmp.flag_h = G2D_ROT_0;
+    // tmp.flag_h = 0;
+    tmp.src_image_h.use_phy_addr = 1;
+    tmp.src_image_h.width = 480;
+    tmp.src_image_h.height = 1280;
+    tmp.src_image_h.align[0] = 4;
+    tmp.src_image_h.laddr[0] = paddr;
+    tmp.src_image_h.alpha = 0xFF;
+    tmp.src_image_h.format = G2D_FORMAT_ARGB8888;
+    tmp.src_image_h.mode = G2D_PIXEL_ALPHA;
+    tmp.src_image_h.clip_rect.x = src_x;
+    tmp.src_image_h.clip_rect.y = src_y;
+    tmp.src_image_h.clip_rect.w = w;
+    tmp.src_image_h.clip_rect.h = h;
+
+    tmp.dst_image_h.use_phy_addr = 1;
+    tmp.dst_image_h.width = 480;
+    tmp.dst_image_h.height = 1280;
+    tmp.dst_image_h.align[0] = 4;
+    tmp.dst_image_h.laddr[0] = paddr;
+    tmp.dst_image_h.alpha = 0xFF;
+    tmp.dst_image_h.format = G2D_FORMAT_ARGB8888;
+    tmp.dst_image_h.mode = G2D_PIXEL_ALPHA;
+    tmp.dst_image_h.clip_rect.x = dst_x;
+    tmp.dst_image_h.clip_rect.y = dst_y;
+    tmp.dst_image_h.clip_rect.w = w;
+    tmp.dst_image_h.clip_rect.h = h;
+
+    ioctl(g2dfd, G2D_CMD_BITBLT_H, &tmp);
+}
+
+
 void rotate_soft(uint32_t* src, uint32_t* dst) {
   for (int i = 0; i < 1280; ++i) {
     for (int j = 0; j < 480; ++j) {
@@ -328,6 +418,28 @@ void rotate_test(uint32_t *mem_in, uint32_t *mem_in2,
   printf("TIME = %lfms. FPS = %lf.\n", elapsed, nframe / (elapsed / 1000.0));
 }
 
+#define WHITE 0xffffffff
+#define BLACK 0xff000000
+#define RED   0xffff0000
+#define GREEN 0xff00ff00
+#define BLUE  0xff0000ff
+
+void bitblt_test(int g2dfd, uint32_t* mem_in, unsigned long paddr, int delta_x, int delta_y) {
+  for (int y = 0; y < 480; ++y) {
+    for (int x = 0; x < 1280; ++x) {
+      mem_in[x + y * 1280] = WHITE;
+    }
+  }
+  for (int y = 100; y < 200; ++y) {
+    for (int x = 100; x < 200; ++x) {
+      mem_in[x + y * 480] = (((x+y) & 0xFF) << 8) + ~((unsigned char)(x & 0xFF)) + 0xFF000000;
+    }
+  }
+  bitblt(g2dfd, paddr, 100, 100, 100 + delta_x, 100 + delta_y, 50, 50);
+  printf("anykey\n");
+  getchar();
+}
+
 int main() {
   int dispfd = open("/dev/disp", O_RDWR);
   printf("dispfd=%d\n", dispfd);
@@ -335,11 +447,23 @@ int main() {
     exit(-1);
   }
 
+  int step_fds = 0;
+  
+  if (step_fds) {
+    printf("dispfd is now open. anykey\n");
+    getchar();
+  }
+
+
   int fbfd = open("/dev/fb0", O_RDWR);
   printf("fbfd=%d\n", fbfd);
   if (fbfd < 0) {
     close(dispfd);
     exit(-1);
+  }
+  if (step_fds) {
+    printf("fbfd is now open. anykey\n");
+    getchar();
   }
 
   int g2dfd = open("/dev/g2d", O_RDWR);
@@ -350,65 +474,104 @@ int main() {
     exit(-1);
   }
 
+  if (step_fds) {
+    printf("g2dfd is now open. anykey\n");
+    getchar();
+  }
+
+
   unsigned long paddr, paddr_2;
   unsigned int psize;
   fb_info(fbfd, &paddr, &psize);
   paddr_2 = paddr + 1280 * 480 * 4;
+  uint32_t* mem_in;
+  uint32_t* mem_in2;
 
   scn_size(dispfd);
-  // output_type(dispfd);
-  device_switch(dispfd);
+  // device_switch(dispfd, (unsigned long)DISP_OUTPUT_TYPE_LCD);
   output_type(dispfd);
   // system("dmesg | tail");
   // set_bkcolor(dispfd);
   device_get_config(dispfd);
   disp_layer_get_config(dispfd);
+  // disp_layer_get_info(dispfd);
+  //
+  // printf("anykey\n");
+  // getchar();
 
-  uint32_t* mem_in = mmap(0, psize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
-  uint32_t* mem_in2 = mem_in + 1280*480;
-  // uint32_t* mem_in = malloc(1280 * 480 * 4); <<- doesn't work. need to pass in physical addr
-  for (int y = 0; y < 480; ++y) {
-    for (int x = 0; x < 1280; ++x) {
-      mem_in[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;
-      mem_in2[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;
-      // mem_in[x + y * 480] = 0xFFFFFFFF;
-      // mem_in[x + y * 480] = 0;
+  if (1) {
+    mem_in = mmap(0, psize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
+    mem_in2 = mem_in + 1280*480;
+    // uint32_t* mem_in = malloc(1280 * 480 * 4); <<- doesn't work. need to pass in physical addr
+    for (int y = 0; y < 480; ++y) {
+      for (int x = 0; x < 1280; ++x) {
+        /*mem_in[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
+        /*mem_in2[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
+        // mem_in[x + y * 480] = 0xFFFFFFFF;
+        mem_in[x + y * 1280] = 0xFFFFFFFF;
+      }
     }
   }
-
-  disp_layer_set_config(dispfd, (uint32_t*)paddr_2);
-  system("dmesg | tail");
-  printf("anykey\n");
-  getchar();
+  if (1) {
+    disp_layer_set_config(dispfd, (uint32_t*)paddr);
+    system("dmesg | tail");
+    printf("screen is initialized\n");
+    printf("anykey\n");
+    getchar();
+  }
 
   if (0) {
     printf("anykey to proceed to fillrect test\n");
     getchar();
 
     srand(time(NULL));
-    fill_test(mem_in2, g2dfd, paddr_2, 10, 10, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 30, 30, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 50, 50, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 70, 70, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 90, 90, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 100, 100, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 200, 200, 10000);
-    fill_test(mem_in2, g2dfd, paddr_2, 300, 300, 10000);
+    fill_test(mem_in, g2dfd, paddr, 10, 10, 10000);
+    fill_test(mem_in, g2dfd, paddr, 30, 30, 10000);
+    fill_test(mem_in, g2dfd, paddr, 50, 50, 10000);
+    fill_test(mem_in, g2dfd, paddr, 70, 70, 10000);
+    fill_test(mem_in, g2dfd, paddr, 90, 90, 10000);
+    fill_test(mem_in, g2dfd, paddr, 100, 100, 10000);
+    fill_test(mem_in, g2dfd, paddr, 100, 100, 10000);
+    fill_test(mem_in, g2dfd, paddr, 200, 200, 10000);
+    fill_test(mem_in, g2dfd, paddr, 300, 300, 10000);
 
     printf("anykey\n");
     getchar();
   }
 
   // note: in-place rotation is not supported.
-  if (1) {
-    rotate_test(mem_in, mem_in2, paddr, paddr_2, g2dfd);
+  if (0) {
+    rotate_test(mem_in2, mem_in, paddr_2, paddr, g2dfd);
     printf("anykey\n");
     getchar();
   }
 
+  // dst_y > src_y, overlap, works
+  bitblt_test(g2dfd, mem_in, paddr, 0, 10);
+  // dst_y < src_y, overlap, works
+  bitblt_test(g2dfd, mem_in, paddr, 0, -10);
+  // dst_x > src_x, overlap, works
+  bitblt_test(g2dfd, mem_in, paddr, 10, 0);
+  // dst_x < src_x, overlap, works
+  bitblt_test(g2dfd, mem_in, paddr, -10, 0);
+  // perhaps the gap is too big? let's set gap=2
+  bitblt_test(g2dfd, mem_in, paddr, -2, 0);
+  bitblt_test(g2dfd, mem_in, paddr, 2, 0);
+  bitblt_test(g2dfd, mem_in, paddr, 0, -2);
+  bitblt_test(g2dfd, mem_in, paddr, 0, 2);
+
+  printf("bitblt test END. anykey\n");
+  getchar();
+
   system("dmesg | tail");
+
+  // release
+  if (0) {
+  // device_switch(dispfd, (unsigned long)DISP_OUTPUT_TYPE_NONE);
+  }
+  disp_layer_disable(dispfd);
   close(fbfd);
   close(dispfd);
+  close(g2dfd);
 	return 0;
 }

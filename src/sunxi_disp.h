@@ -49,11 +49,9 @@ typedef struct {
     /* Layers support */
     int                 gfx_layer_id;
     int                 layer_id;
-    int                 layer_has_scaler;
 
     int                 layer_buf_x, layer_buf_y, layer_buf_w, layer_buf_h;
     int                 layer_win_x, layer_win_y;
-    int                 layer_scaler_is_enabled;
     int                 layer_format;
 
     /* G2D accelerated implementation of blt2d_i interface */
@@ -130,8 +128,8 @@ int sunxi_g2d_blit_a8r8g8b8(sunxi_disp_t *disp,
  * return 0, indicating that a software blit is preferred. The
  * 16BPP constant applies to 16bpp to 16bpp blit.
  */
-#define G2D_BLT_SIZE_THRESHOLD 1000
-#define G2D_BLT_SIZE_THRESHOLD_16BPP 2500
+#define G2D_BLT_SIZE_THRESHOLD 90*90
+#define G2D_BLT_SIZE_THRESHOLD_16BPP 90*90*4
 
 /* G2D counterpart for pixman_blt with the support for 16bpp and 32bpp */
 int sunxi_g2d_blt(void               *disp,
@@ -148,4 +146,5 @@ int sunxi_g2d_blt(void               *disp,
                   int                 w,
                   int                 h);
 
+int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vaddr);
 #endif
