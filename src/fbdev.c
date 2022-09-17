@@ -656,6 +656,37 @@ FBDevPreInit(ScrnInfoPtr pScrn, int flags)
 	return TRUE;
 }
 
+static void
+fbdevUpdateRotatePacked(ScreenPtr pScreen, shadowBufPtr pBuf)
+{
+    ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
+    FBDevPtr fPtr = FBDEVPTR(pScrn);
+    if (fPtr->sunxi_disp_private) {
+      /*
+      PixmapPtr	pShadow = pBuf->pPixmap;
+      FbBits	*shaBits;
+      FbStride	shaStride;
+      int		shaBpp;
+      int		shaXoff, shaYoff;
+      fbGetDrawable(&pShadow->drawable, shaBits, shaStride, shaBpp, shaXoff, shaYoff);
+      xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+           "%s: fbGetDrawable results: %lx %d %d %d %d %d\n", __PRETTY_FUNCTION__,
+           (uintptr_t)shaBits, shaStride, shaBpp, shaXoff, shaYoff);
+      xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+           "fbmem=%lx fbstart=%lx\n", fPtr->fbmem, fPtr->fbstart);
+           */
+      sunxi_g2d_rotate_fullscreen(fPtr->sunxi_disp_private, fPtr->shadow, fPtr->fbstart);
+    } else {
+      // https://opensource.apple.com/source/X11server/X11server-85/kdrive/xorg-server-1.6.0/miext/shadow/shrotate.c.auto.html
+      shadowUpdateRotatePacked(pScreen, pBuf);
+    }
+}
+
+static void
+fbdevUpdatePacked(ScreenPtr pScreen, shadowBufPtr pBuf)
+{
+    shadowUpdatePacked(pScreen, pBuf);
+}
 
 static Bool
 FBDevCreateScreenResources(ScreenPtr pScreen)
@@ -725,6 +756,7 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	       pScrn->offset.red,pScrn->offset.green,pScrn->offset.blue);
 #endif
 
+  // https://searchcode.com/codesearch/view/32399865/
 	if (NULL == (fPtr->fbmem = fbdevHWMapVidmem(pScrn))) {
 	        xf86DrvMsg(pScrn->scrnIndex,X_ERROR,"mapping of video memory"
 			   " failed\n");
@@ -791,8 +823,9 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	fPtr->fbstart = fPtr->fbmem + fPtr->fboff;
 
 	if (fPtr->shadowFB) {
-	    fPtr->shadow = calloc(1, pScrn->virtualX * pScrn->virtualY *
-				  pScrn->bitsPerPixel);
+      fPtr->shadow = fPtr->fbmem + 1280 * 480 * 4;
+			/*fPtr->shadow = calloc(1, pScrn->virtualX * pScrn->virtualY **/
+					/*pScrn->bitsPerPixel);*/
 
 	    if (!fPtr->shadow) {
 		xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
@@ -809,6 +842,7 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 		case 16:
 		case 24:
 		case 32:
+      // https://xwindow.angelfire.com/page8_4_10.html
 			ret = fbScreenInit(pScreen, fPtr->shadowFB ? fPtr->shadow
 					   : fPtr->fbstart, pScrn->virtualX,
 					   pScrn->virtualY, pScrn->xDpi,
@@ -1107,20 +1141,6 @@ FBDevCloseScreen(CLOSE_SCREEN_ARGS_DECL)
 	ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
 	FBDevPtr fPtr = FBDEVPTR(pScrn);
 
-#ifdef HAVE_LIBUMP
-	if (fPtr->SunxiMaliDRI2_private) {
-	    SunxiMaliDRI2_Close(pScreen);
-	    free(fPtr->SunxiMaliDRI2_private);
-	    fPtr->SunxiMaliDRI2_private = NULL;
-	}
-#endif
-
-	if (fPtr->SunxiDispHardwareCursor_private) {
-	    SunxiDispHardwareCursor_Close(pScreen);
-	    free(fPtr->SunxiDispHardwareCursor_private);
-	    fPtr->SunxiDispHardwareCursor_private = NULL;
-	}
-
 #if XV
 	if (fPtr->SunxiVideo_private) {
 	    SunxiVideo_Close(pScreen);
@@ -1133,7 +1153,7 @@ FBDevCloseScreen(CLOSE_SCREEN_ARGS_DECL)
 	fbdevHWUnmapVidmem(pScrn);
 	if (fPtr->shadow) {
 	    shadowRemove(pScreen, pScreen->GetScreenPixmap(pScreen));
-	    free(fPtr->shadow);
+	    // free(fPtr->shadow);
 	    fPtr->shadow = NULL;
 	}
 
