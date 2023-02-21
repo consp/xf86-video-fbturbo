@@ -782,8 +782,9 @@ int sunxi_g2d_blt(void               *self,
     sunxi_disp_t *disp = (sunxi_disp_t *)self;
     int blt_size_threshold;
     g2d_blt_h tmp;
-    uint8_t src_is_shadow, dst_is_shadow;
-    unsigned long shadow_paddr;
+    uint8_t src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
+    uint8_t dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
+    unsigned long shadow_paddr = disp->framebuffer_paddr + 1280 * 480 * 4;
 
     /* Zero size blit, nothing to do */
     if (w <= 0 || h <= 0)
@@ -801,7 +802,6 @@ int sunxi_g2d_blt(void               *self,
         (uint8_t *)dst_bits < disp->framebuffer_addr ||
         (uint8_t *)dst_bits >= disp->framebuffer_addr + disp->framebuffer_size)
     {
-        // DONE need to hack shadowFB into framebuffer!
         return FALLBACK_BLT();
     }
 
@@ -818,17 +818,6 @@ int sunxi_g2d_blt(void               *self,
         blt_size_threshold = G2D_BLT_SIZE_THRESHOLD;
     if (w * h < blt_size_threshold)
         return FALLBACK_BLT();
-
-    /* Unsupported overlapping type */
-    if (src_bits == dst_bits && src_y == dst_y && src_x + 1 < dst_x) {
-        PRINTLINE();
-        return FALLBACK_BLT();
-    }
-
-    if (src_y != dst_y && src_x != dst_x) {
-        PRINTLINE();
-        return FALLBACK_BLT();
-    }
 
     if (disp->fd_g2d < 0)
         return FALLBACK_BLT();
@@ -848,22 +837,41 @@ int sunxi_g2d_blt(void               *self,
         return FALLBACK_BLT();
     }
 
-    src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
-    dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
-
     if (!src_is_shadow || !dst_is_shadow) {
       PRINTLINE();
       return FALLBACK_BLT();
     }
 
-    xf86DrvMsg(0, X_INFO, "%s: %dx%d, src(%d,%d) -> dst(%d,%d), src_stride=%d, dst_stride=%d\n", __PRETTY_FUNCTION__,
-        w, h, src_x, src_y, dst_x, dst_y, src_stride, dst_stride);
+    xf86DrvMsg(0, X_INFO, "%dx%d, src(%d,%d) -> dst(%d,%d)\n",
+        w, h, src_x, src_y, dst_x, dst_y);
 
-    shadow_paddr = disp->framebuffer_paddr + 1280 * 480 * 4;
+
+    // don't do delta x & y in one run.
+    if (src_y != dst_y && src_x != dst_x) {
+	    xf86DrvMsg(0, X_INFO, "split x & y\n");
+	    // XXX corners are damaged!
+	    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, src_y, src_x, dst_y, w, h);
+	    return sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, dst_y, dst_x, dst_y, w, h);
+    }
+
+    // X axis forward: not fully supported
+    if (dst_x > src_x) {
+	    int delta_x = (dst_x - src_x);
+	    int src_x_mod = src_x & 0xF;
+	    while (delta_x + src_x_mod >= 17) {
+		    // XXX destroys everything in its path!
+		    int dx = 16 - src_x_mod;
+		    xf86DrvMsg(0, X_INFO, "split x: progress %d\n", dx);
+		    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, src_y, src_x + dx, dst_y, w, h);
+		    src_x += dx;
+		    src_x_mod = src_x & 0xf;
+		    delta_x -= dx;
+	    }
+	    xf86DrvMsg(0, X_INFO, "split x: done, remain %d\n", delta_x);
+    }
+
     memset(&tmp, 0, sizeof(tmp));
-    //if (src_is_shadow && dst_is_shadow) {
     tmp.flag_h = G2D_ROT_0;
-    // tmp.flag_h = 0;
     tmp.src_image_h.use_phy_addr = 1;
     tmp.src_image_h.width = 1280;
     tmp.src_image_h.height = 480;

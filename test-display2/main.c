@@ -156,7 +156,7 @@ void disp_layer_disable(int dispfd) {
 }
 
 // works. can map back the framebuffer memory!
-void disp_layer_set_config(int dispfd, uint32_t* mem_in) {
+void disp_layer_set_config(int dispfd, uint32_t* mem_fbfd_map) {
   printf("设置图层参数，dispfd 为显示驱动句柄\n");
   unsigned long arg[3];
   struct disp_layer_config config;
@@ -168,7 +168,7 @@ void disp_layer_set_config(int dispfd, uint32_t* mem_in) {
   config.layer_id = 0;//layer index in the blending channel
   config.enable = 1;
   config.info.mode = LAYER_MODE_BUFFER;
-  config.info.fb.addr[0] = (unsigned long long)mem_in; //FB 地址
+  config.info.fb.addr[0] = (unsigned long long)mem_fbfd_map; //FB 地址
   config.info.fb.size[0].width = width;
   config.info.fb.align[0] = 4;//bytes
   config.info.fb.format = DISP_FORMAT_ARGB_8888; //DISP_FORMAT_YUV420_P
@@ -389,7 +389,7 @@ void fill_test(uint32_t* vaddr, int g2dfd, unsigned long paddr, int fill_w, int 
 
 }
 
-void rotate_test(uint32_t *mem_in, uint32_t *mem_in2,
+void rotate_test(uint32_t *mem_fbfd_map, uint32_t *mem_shadow,
     unsigned long paddr, unsigned long paddr_2, int g2dfd) {
   struct timeval t0, t1;
   double elapsed;
@@ -400,7 +400,7 @@ void rotate_test(uint32_t *mem_in, uint32_t *mem_in2,
   printf(" >>> software rotate: ");
   gettimeofday(&t0, NULL);
   for(int i = 0; i < nframe; ++i) {
-    rotate_soft(mem_in, mem_in2);
+    rotate_soft(mem_fbfd_map, mem_shadow);
   }
   gettimeofday(&t1, NULL);
   elapsed = (t1.tv_sec - t0.tv_sec) * 1000.0;
@@ -424,19 +424,21 @@ void rotate_test(uint32_t *mem_in, uint32_t *mem_in2,
 #define GREEN 0xff00ff00
 #define BLUE  0xff0000ff
 
-void bitblt_test(int g2dfd, uint32_t* mem_in, unsigned long paddr, int delta_x, int delta_y) {
+void bitblt_test(int g2dfd, uint32_t* mem_fbfd_map, unsigned long paddr, int x0, int y0, int w, int h, int delta_x, int delta_y) {
   for (int y = 0; y < 480; ++y) {
     for (int x = 0; x < 1280; ++x) {
-      mem_in[x + y * 1280] = WHITE;
+      mem_fbfd_map[x + y * 1280] = WHITE;
     }
   }
-  for (int y = 100; y < 200; ++y) {
-    for (int x = 100; x < 200; ++x) {
-      mem_in[x + y * 480] = (((x+y) & 0xFF) << 8) + ~((unsigned char)(x & 0xFF)) + 0xFF000000;
+  for (int y = y0; y < y0 + h; ++y) {
+    for (int x = x0; x < x0 + w; ++x) {
+      mem_fbfd_map[x + y * 480] = (((x+y) & 0xFF) << 8) + ~((unsigned char)(x & 0xFF)) + 0xFF000000;
     }
   }
-  bitblt(g2dfd, paddr, 100, 100, 100 + delta_x, 100 + delta_y, 50, 50);
-  printf("anykey\n");
+  printf("==== before ==== (anykey)\n");
+  getchar();
+  bitblt(g2dfd, paddr, x0, y0, x0 + delta_x, y0 + delta_y, w, h);
+  printf("==== after ==== (anykey)\n");
   getchar();
 }
 
@@ -484,8 +486,8 @@ int main() {
   unsigned int psize;
   fb_info(fbfd, &paddr, &psize);
   paddr_2 = paddr + 1280 * 480 * 4;
-  uint32_t* mem_in;
-  uint32_t* mem_in2;
+  uint32_t* mem_fbfd_map;
+  uint32_t* mem_shadow;
 
   scn_size(dispfd);
   // device_switch(dispfd, (unsigned long)DISP_OUTPUT_TYPE_LCD);
@@ -500,15 +502,15 @@ int main() {
   // getchar();
 
   if (1) {
-    mem_in = mmap(0, psize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
-    mem_in2 = mem_in + 1280*480;
-    // uint32_t* mem_in = malloc(1280 * 480 * 4); <<- doesn't work. need to pass in physical addr
+    mem_fbfd_map = mmap(0, psize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
+    mem_shadow = mem_fbfd_map + 1280*480;
+    // uint32_t* mem_fbfd_map = malloc(1280 * 480 * 4); <<- doesn't work. need to pass in physical addr
     for (int y = 0; y < 480; ++y) {
       for (int x = 0; x < 1280; ++x) {
-        /*mem_in[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
-        /*mem_in2[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
-        // mem_in[x + y * 480] = 0xFFFFFFFF;
-        mem_in[x + y * 1280] = 0xFFFFFFFF;
+        /*mem_fbfd_map[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
+        /*mem_shadow[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
+        // mem_fbfd_map[x + y * 480] = 0xFFFFFFFF;
+        mem_fbfd_map[x + y * 1280] = 0xFFFFFFFF;
       }
     }
   }
@@ -525,15 +527,15 @@ int main() {
     getchar();
 
     srand(time(NULL));
-    fill_test(mem_in, g2dfd, paddr, 10, 10, 10000);
-    fill_test(mem_in, g2dfd, paddr, 30, 30, 10000);
-    fill_test(mem_in, g2dfd, paddr, 50, 50, 10000);
-    fill_test(mem_in, g2dfd, paddr, 70, 70, 10000);
-    fill_test(mem_in, g2dfd, paddr, 90, 90, 10000);
-    fill_test(mem_in, g2dfd, paddr, 100, 100, 10000);
-    fill_test(mem_in, g2dfd, paddr, 100, 100, 10000);
-    fill_test(mem_in, g2dfd, paddr, 200, 200, 10000);
-    fill_test(mem_in, g2dfd, paddr, 300, 300, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 10, 10, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 30, 30, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 50, 50, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 70, 70, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 90, 90, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 100, 100, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 100, 100, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 200, 200, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 300, 300, 10000);
 
     printf("anykey\n");
     getchar();
@@ -541,24 +543,58 @@ int main() {
 
   // note: in-place rotation is not supported.
   if (0) {
-    rotate_test(mem_in2, mem_in, paddr_2, paddr, g2dfd);
+    rotate_test(mem_shadow, mem_fbfd_map, paddr_2, paddr, g2dfd);
     printf("anykey\n");
     getchar();
   }
 
-  // dst_y > src_y, overlap, works
-  bitblt_test(g2dfd, mem_in, paddr, 0, 10);
-  // dst_y < src_y, overlap, works
-  bitblt_test(g2dfd, mem_in, paddr, 0, -10);
-  // dst_x > src_x, overlap, works
-  bitblt_test(g2dfd, mem_in, paddr, 10, 0);
-  // dst_x < src_x, overlap, works
-  bitblt_test(g2dfd, mem_in, paddr, -10, 0);
-  // perhaps the gap is too big? let's set gap=2
-  bitblt_test(g2dfd, mem_in, paddr, -2, 0);
-  bitblt_test(g2dfd, mem_in, paddr, 2, 0);
-  bitblt_test(g2dfd, mem_in, paddr, 0, -2);
-  bitblt_test(g2dfd, mem_in, paddr, 0, 2);
+  /* SIZE(432,808) ORIGIN(i,217) OFFSET(8,0) results:
+   * 0..8
+   * 9..15 X
+   * 16..24
+   * 25..31 X
+   * 32..40
+   * 41..47 X
+   * 48..56
+   * 57..63 X
+   * ...
+   * X + 1 doesn't change the pattern.
+   * Width + 1 doesn't change the pattern.
+   * Delta X + 1 DOES change the pattern.
+   * TODO Moving Y?
+   *
+   * ... OFFSET(9,0) results:
+   * 0..7
+   * 8..15 X
+   * ...
+   *
+   * ... OFFSET(1,0) results:
+   * 0..255 OK
+   *
+   * ... OFFSET(2,0) results:
+   * 0..14 OK
+   * 15 X
+   * 16..30 OK
+   * 31 X
+   *
+   * ... OFFSET(14,0) results:
+   * 0..2 OK
+   * 3..15 X
+   *
+   * ... OFFSET(16,0) results:
+   * 0 OK
+   * 1..15 X
+   *
+   * ... OFFSET(17,0) results:
+   * 0..255 X
+   *
+   * ... Negative X offset ALL OK.
+   * ... Applying both X & Y offsets destroys the pattern.
+   */
+  for (int i = 0; i < 100; ++i) {
+	  printf("x = %d\n", i);
+	  bitblt_test(g2dfd, mem_fbfd_map, paddr, i, 219, 432, 808, 18, 0);
+  }
 
   printf("bitblt test END. anykey\n");
   getchar();
