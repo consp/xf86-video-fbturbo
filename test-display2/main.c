@@ -590,10 +590,15 @@ int main() {
    *
    * ... Negative X offset ALL OK.
    * ... Applying both X & Y offsets destroys the pattern.
+   *
+   * Non-overlapped test
+   * SIZE(100,808) ORIGIN(i,217) OFFSET(120,0) results:
+   * SIZE(100,808) ORIGIN(i,217) OFFSET(120,120) results:
+   * ALL OK
    */
   for (int i = 0; i < 100; ++i) {
 	  printf("x = %d\n", i);
-	  bitblt_test(g2dfd, mem_fbfd_map, paddr, i, 219, 432, 808, 18, 0);
+	  bitblt_test(g2dfd, mem_fbfd_map, paddr, i, 217, 100, 808, 120, 120);
   }
 
   printf("bitblt test END. anykey\n");

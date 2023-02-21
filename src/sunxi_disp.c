@@ -39,7 +39,7 @@
 // for debug only
 #if 1
 #include <xorg/xf86.h>
-#define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s L%d\n", __PRETTY_FUNCTION__, __LINE__)
+#define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s:L%d:%s\n", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
 #else
 #define PRINTLINE() {}
@@ -61,6 +61,7 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
 
     xf86DrvMsg(0, X_INFO, "sunxi_disp_init: begin\n");
 
+    // TODO let XServer handle fb files and only focus on g2d here
     /* use /dev/fb0 by default */
     if (!device)
         device = "/dev/fb0";
@@ -781,10 +782,15 @@ int sunxi_g2d_blt(void               *self,
 {
     sunxi_disp_t *disp = (sunxi_disp_t *)self;
     int blt_size_threshold;
-    g2d_blt_h tmp;
+    g2d_blt_h cmd;
     uint8_t src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
     uint8_t dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
+    uint8_t is_samebuffer = (src_bits == dst_bits);
+    uint8_t x_is_overlapped = (src_x < dst_x && dst_x <= src_x + w) || (dst_x < src_x && src_x <= dst_x + w);
     unsigned long shadow_paddr = disp->framebuffer_paddr + 1280 * 480 * 4;
+
+    static uint32_t *tmp_bits = NULL;
+    static size_t tmp_sz = 0;
 
     /* Zero size blit, nothing to do */
     if (w <= 0 || h <= 0)
@@ -842,102 +848,95 @@ int sunxi_g2d_blt(void               *self,
       return FALLBACK_BLT();
     }
 
-    xf86DrvMsg(0, X_INFO, "%dx%d, src(%d,%d) -> dst(%d,%d)\n",
-        w, h, src_x, src_y, dst_x, dst_y);
+    // xf86DrvMsg(0, X_INFO, "%dx%d, src(%d,%d) -> dst(%d,%d)\n",
+    //     w, h, src_x, src_y, dst_x, dst_y);
 
-
-    // don't do delta x & y in one run.
-    if (src_y != dst_y && src_x != dst_x) {
-	    xf86DrvMsg(0, X_INFO, "split x & y\n");
-	    // XXX corners are damaged!
+    if (src_y != dst_y && src_x != dst_x && x_is_overlapped) {
+	    // don't do delta x & y in one run.
+	    // corners are damaged!
+	    int cx1, cx2, cy1, cy2;
+	    int cw, ch;
+	    if (dst_x < src_x) {
+		    if (dst_y < src_y) {
+			    cx1 = dst_x + w;
+			    cy1 = dst_y;
+			    cx2 = src_x + w;
+			    cy2 = src_y;
+		    } else {
+			    cx1 = dst_x + w;
+			    cy1 = src_y + h;
+			    cx2 = src_x + w;
+			    cy2 = dst_y + h;
+		    }
+	    } else {
+		    if (dst_y < src_y) {
+			    cx1 = src_x;
+			    cy1 = dst_y;
+			    cx2 = dst_x;
+			    cy2 = src_y;
+		    } else {
+			    cx1 = src_x;
+			    cy1 = src_y + h;
+			    cx2 = dst_x;
+			    cy2 = dst_y + h;
+		    }
+	    }
+	    cw = cx2 - cx1;
+	    ch = cy2 - cy1;
+	    size_t sz = cw * ch * 4;
+	    if (sz > tmp_sz) {
+		    tmp_bits = (uint32_t*)realloc(tmp_bits, sz);
+		    tmp_sz = sz;
+	    }
+	    sunxi_g2d_try_fallback_blt(self, src_bits, tmp_bits, src_stride, cw, src_bpp, src_bpp, cx1, cy1, 0, 0, cw, ch);
 	    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, src_y, src_x, dst_y, w, h);
-	    return sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, dst_y, dst_x, dst_y, w, h);
+	    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, dst_y, dst_x, dst_y, w, h);
+	    sunxi_g2d_try_fallback_blt(self, tmp_bits, src_bits, cw, src_stride, src_bpp, src_bpp, 0, 0, cx1, cy1, cw, ch);
+	    return 1;
     }
 
     // X axis forward: not fully supported
-    if (dst_x > src_x) {
+    if (dst_x > src_x && src_y == dst_y && x_is_overlapped) {
 	    int delta_x = (dst_x - src_x);
 	    int src_x_mod = src_x & 0xF;
 	    while (delta_x + src_x_mod >= 17) {
-		    // XXX destroys everything in its path!
 		    int dx = 16 - src_x_mod;
-		    xf86DrvMsg(0, X_INFO, "split x: progress %d\n", dx);
 		    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, src_y, src_x + dx, dst_y, w, h);
 		    src_x += dx;
 		    src_x_mod = src_x & 0xf;
 		    delta_x -= dx;
 	    }
-	    xf86DrvMsg(0, X_INFO, "split x: done, remain %d\n", delta_x);
     }
 
-    memset(&tmp, 0, sizeof(tmp));
-    tmp.flag_h = G2D_ROT_0;
-    tmp.src_image_h.use_phy_addr = 1;
-    tmp.src_image_h.width = 1280;
-    tmp.src_image_h.height = 480;
-    tmp.src_image_h.align[0] = 4;
-    tmp.src_image_h.laddr[0] = shadow_paddr;
-    tmp.src_image_h.alpha = 0xFF;
-    tmp.src_image_h.format = G2D_FORMAT_ARGB8888;
-    tmp.src_image_h.mode = G2D_PIXEL_ALPHA;
-    tmp.src_image_h.clip_rect.x = src_x;
-    tmp.src_image_h.clip_rect.y = src_y;
-    tmp.src_image_h.clip_rect.w = w;
-    tmp.src_image_h.clip_rect.h = h;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.flag_h = G2D_ROT_0;
+    cmd.src_image_h.use_phy_addr = 1;
+    cmd.src_image_h.width = 1280;
+    cmd.src_image_h.height = 480;
+    cmd.src_image_h.align[0] = 4;
+    cmd.src_image_h.laddr[0] = shadow_paddr;
+    cmd.src_image_h.alpha = 0xFF;
+    cmd.src_image_h.format = G2D_FORMAT_ARGB8888;
+    cmd.src_image_h.mode = G2D_PIXEL_ALPHA;
+    cmd.src_image_h.clip_rect.x = src_x;
+    cmd.src_image_h.clip_rect.y = src_y;
+    cmd.src_image_h.clip_rect.w = w;
+    cmd.src_image_h.clip_rect.h = h;
 
-    tmp.dst_image_h.use_phy_addr = 1;
-    tmp.dst_image_h.width = 1280;
-    tmp.dst_image_h.height = 480;
-    tmp.dst_image_h.align[0] = 4;
-    tmp.dst_image_h.laddr[0] = shadow_paddr;
-    tmp.dst_image_h.alpha = 0xFF;
-    tmp.dst_image_h.format = G2D_FORMAT_ARGB8888;
-    tmp.dst_image_h.mode = G2D_PIXEL_ALPHA;
-    tmp.dst_image_h.clip_rect.x = dst_x;
-    tmp.dst_image_h.clip_rect.y = dst_y;
-    tmp.dst_image_h.clip_rect.w = w;
-    tmp.dst_image_h.clip_rect.h = h;
+    cmd.dst_image_h.use_phy_addr = 1;
+    cmd.dst_image_h.width = 1280;
+    cmd.dst_image_h.height = 480;
+    cmd.dst_image_h.align[0] = 4;
+    cmd.dst_image_h.laddr[0] = shadow_paddr;
+    cmd.dst_image_h.alpha = 0xFF;
+    cmd.dst_image_h.format = G2D_FORMAT_ARGB8888;
+    cmd.dst_image_h.mode = G2D_PIXEL_ALPHA;
+    cmd.dst_image_h.clip_rect.x = dst_x;
+    cmd.dst_image_h.clip_rect.y = dst_y;
+    cmd.dst_image_h.clip_rect.w = w;
+    cmd.dst_image_h.clip_rect.h = h;
 
-    return (ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &tmp) == 0);
-
-    //  tmp.flag                    = G2D_BLT_NONE;
-    //  tmp.src_image.addr[0]       = disp->framebuffer_paddr +
-    //                                ((uint8_t *)src_bits - disp->framebuffer_addr);
-    //  tmp.src_rect.x              = src_x;
-    //  tmp.src_rect.y              = src_y;
-    //  tmp.src_rect.w              = w;
-    //  tmp.src_rect.h              = h;
-    //  tmp.src_image.h             = src_y + h;
-    //  if (src_bpp == 32) {
-    //      tmp.src_image.w         = src_stride;
-    //      tmp.src_image.format    = G2D_FMT_ARGB_AYUV8888;
-    //      tmp.src_image.pixel_seq = G2D_SEQ_NORMAL;
-    //  }
-    //  else if (src_bpp == 16) {
-    //      tmp.src_image.w         = src_stride * 2;
-    //      tmp.src_image.format    = G2D_FMT_RGB565;
-    //      tmp.src_image.pixel_seq = G2D_SEQ_P10;
-    //  }
-
-    //  tmp.dst_image.addr[0]       = disp->framebuffer_paddr +
-    //                                ((uint8_t *)dst_bits - disp->framebuffer_addr);
-    //  tmp.dst_x                   = dst_x;
-    //  tmp.dst_y                   = dst_y;
-    //  tmp.color                   = 0;
-    //  tmp.alpha                   = 0;
-    //  tmp.dst_image.h             = dst_y + h;
-    //  if (dst_bpp == 32) {
-    //      tmp.dst_image.w         = dst_stride;
-    //      tmp.dst_image.format    = G2D_FMT_ARGB_AYUV8888;
-    //      tmp.dst_image.pixel_seq = G2D_SEQ_NORMAL;
-    //  }
-    //  else if (dst_bpp == 16) {
-    //      tmp.dst_image.w         = dst_stride * 2;
-    //      tmp.dst_image.format    = G2D_FMT_RGB565;
-    //      tmp.dst_image.pixel_seq = G2D_SEQ_P10;
-    //  }
-
-    //  return ioctl(disp->fd_g2d, G2D_CMD_BITBLT, &tmp) == 0;
+    return (ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &cmd) == 0);
 }
 
 int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vaddr) {
@@ -945,36 +944,36 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   unsigned long src_paddr = disp->framebuffer_paddr + (src_vaddr - disp->framebuffer_addr);
   unsigned long dst_paddr = disp->framebuffer_paddr + (dst_vaddr - disp->framebuffer_addr);
 
-  g2d_blt_h tmp;
-  memset(&tmp, 0, sizeof(tmp));
-  tmp.flag_h = G2D_ROT_90;
-  tmp.src_image_h.use_phy_addr = 1;
-  tmp.src_image_h.width = 1280;
-  tmp.src_image_h.height = 480;
-  tmp.src_image_h.align[0] = 4;
-  tmp.src_image_h.laddr[0] = src_paddr;
-  tmp.src_image_h.alpha = 0xFF;
-  tmp.src_image_h.format = G2D_FORMAT_ARGB8888;
-  tmp.src_image_h.mode = G2D_PIXEL_ALPHA;
-  tmp.src_image_h.clip_rect.x = 0;
-  tmp.src_image_h.clip_rect.y = 0;
-  tmp.src_image_h.clip_rect.w = 1280;
-  tmp.src_image_h.clip_rect.h = 480;
+  g2d_blt_h cmd;
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.flag_h = G2D_ROT_90;
+  cmd.src_image_h.use_phy_addr = 1;
+  cmd.src_image_h.width = 1280;
+  cmd.src_image_h.height = 480;
+  cmd.src_image_h.align[0] = 4;
+  cmd.src_image_h.laddr[0] = src_paddr;
+  cmd.src_image_h.alpha = 0xFF;
+  cmd.src_image_h.format = G2D_FORMAT_ARGB8888;
+  cmd.src_image_h.mode = G2D_PIXEL_ALPHA;
+  cmd.src_image_h.clip_rect.x = 0;
+  cmd.src_image_h.clip_rect.y = 0;
+  cmd.src_image_h.clip_rect.w = 1280;
+  cmd.src_image_h.clip_rect.h = 480;
 
-  tmp.dst_image_h.use_phy_addr = 1;
-  tmp.dst_image_h.width = 480;
-  tmp.dst_image_h.height = 1280;
-  tmp.dst_image_h.align[0] = 4;
-  tmp.dst_image_h.laddr[0] = dst_paddr;
-  tmp.dst_image_h.alpha = 0xFF;
-  tmp.dst_image_h.format = G2D_FORMAT_ARGB8888;
-  tmp.dst_image_h.mode = G2D_PIXEL_ALPHA;
-  tmp.dst_image_h.clip_rect.x = 0;
-  tmp.dst_image_h.clip_rect.y = 0;
-  tmp.dst_image_h.clip_rect.w = 480;
-  tmp.dst_image_h.clip_rect.h = 1280;
+  cmd.dst_image_h.use_phy_addr = 1;
+  cmd.dst_image_h.width = 480;
+  cmd.dst_image_h.height = 1280;
+  cmd.dst_image_h.align[0] = 4;
+  cmd.dst_image_h.laddr[0] = dst_paddr;
+  cmd.dst_image_h.alpha = 0xFF;
+  cmd.dst_image_h.format = G2D_FORMAT_ARGB8888;
+  cmd.dst_image_h.mode = G2D_PIXEL_ALPHA;
+  cmd.dst_image_h.clip_rect.x = 0;
+  cmd.dst_image_h.clip_rect.y = 0;
+  cmd.dst_image_h.clip_rect.w = 480;
+  cmd.dst_image_h.clip_rect.h = 1280;
 
-  if(ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &tmp) < 0) {
+  if(ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &cmd) < 0) {
     return -1;
   }
   return 0;

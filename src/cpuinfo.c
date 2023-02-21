@@ -153,34 +153,9 @@ cpuinfo_t *cpuinfo_init()
     if (!cpuinfo)
         return NULL;
 
-    if (!parse_proc_cpuinfo(cpuinfo)) {
-        cpuinfo->processor_name = strdup("Unknown");
-        return cpuinfo;
-    }
+    cpuinfo->processor_name = strdup("Unknown");
+    return cpuinfo;
 
-    if (cpuinfo->arm_implementer == 0x41 && cpuinfo->arm_part == 0xC0F) {
-        cpuinfo->processor_name = strdup("ARM Cortex-A15");
-    } else if (cpuinfo->arm_implementer == 0x41 && cpuinfo->arm_part == 0xC09) {
-        if (cpuinfo->has_arm_neon)
-            cpuinfo->processor_name = strdup("ARM Cortex-A9");
-        else
-            cpuinfo->processor_name = strdup("ARM Cortex-A9 without NEON (Tegra2?)");
-    } else if (cpuinfo->arm_implementer == 0x41 && cpuinfo->arm_part == 0xC08) {
-        if (cpuinfo->arm_variant > 1)
-            cpuinfo->processor_name = strdup("Late ARM Cortex-A8 (NEON can bypass L1 cache)");
-        else
-            cpuinfo->processor_name = strdup("Early ARM Cortex-A8");
-    } else if (cpuinfo->arm_implementer == 0x41 && cpuinfo->arm_part == 0xC07) {
-        cpuinfo->processor_name = strdup("ARM Cortex-A7");
-    } else if (cpuinfo->arm_implementer == 0x41 && cpuinfo->arm_part == 0xC05) {
-        cpuinfo->processor_name = strdup("ARM Cortex-A5");
-    } else if (cpuinfo->arm_implementer == 0x41 && cpuinfo->arm_part == 0xB76) {
-        cpuinfo->processor_name = strdup("ARM1176");
-    } else if (cpuinfo->arm_implementer == 0x56 && cpuinfo->arm_part == 0x581) {
-        cpuinfo->processor_name = strdup("Marvell PJ4");
-    } else {
-        cpuinfo->processor_name = strdup("Unknown");
-    }
 
     return cpuinfo;
 }
