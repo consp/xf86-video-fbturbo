@@ -60,7 +60,7 @@ typedef struct {
     blt2d_i            *fallback_blt2d;
 } sunxi_disp_t;
 
-sunxi_disp_t *sunxi_disp_init(const char *fb_device, void *xserver_fbmem);
+sunxi_disp_t *sunxi_disp_init(const char *fb_device, int fb_fd, void *xserver_fbmem);
 int sunxi_disp_close(sunxi_disp_t *ctx);
 
 /*

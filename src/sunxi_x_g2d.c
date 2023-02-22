@@ -331,8 +331,7 @@ SunxiG2D *SunxiG2D_Init(ScreenPtr pScreen, blt2d_i *blt2d)
 {
     SunxiG2D *private = calloc(1, sizeof(SunxiG2D));
     if (!private) {
-        xf86DrvMsg(pScreen->myNum, X_INFO,
-            "SunxiG2D_Init: calloc failed\n");
+        xf86DrvMsg(pScreen->myNum, X_ERROR, "SunxiG2D_Init: calloc failed\n");
         return NULL;
     }
 

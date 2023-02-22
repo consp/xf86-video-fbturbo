@@ -902,9 +902,10 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	//  	xf86DrvMsg(pScrn->scrnIndex, X_INFO,
 	//  	           "can't load 'g2d_23' kernel module\n");
 
-	fPtr->sunxi_disp_private = sunxi_disp_init(xf86FindOptionValue(
-	                                fPtr->pEnt->device->options,"fbdev"),
-	                                fPtr->fbmem);
+	fPtr->sunxi_disp_private = sunxi_disp_init(
+      xf86FindOptionValue(fPtr->pEnt->device->options,"fbdev"),
+      fbdevHWGetFD(pScrn),
+      fPtr->fbmem);
 	if (!fPtr->sunxi_disp_private) {
 		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
 		           "failed to enable the use of sunxi display controller\n");

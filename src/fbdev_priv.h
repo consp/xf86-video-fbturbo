@@ -40,27 +40,27 @@
 typedef struct {
 	unsigned char*			fbstart;
 	unsigned char*			fbmem;
-	int				fboff;
-	int				lineLength;
-	int				rotate;
-	Bool				shadowFB;
-	void				*shadow;
+	int						fboff;
+	int						lineLength;
+	int						rotate;
+	Bool					shadowFB;
+	void					*shadow;
 	CloseScreenProcPtr		CloseScreen;
 	CreateScreenResourcesProcPtr	CreateScreenResources;
-	void				(*PointerMoved)(SCRN_ARG_TYPE arg, int x, int y);
+	void					(*PointerMoved)(SCRN_ARG_TYPE arg, int x, int y);
 	EntityInfoPtr			pEnt;
 	/* DGA info */
-	DGAModePtr			pDGAMode;
-	int				nDGAMode;
+	DGAModePtr				pDGAMode;
+	int						nDGAMode;
 	OptionInfoPtr			Options;
 
-	void				*cpu_backend_private;
-	void				*sunxi_disp_private;
-	void				*fb_copyarea_private;
-	void				*SunxiDispHardwareCursor_private;
-	void				*SunxiMaliDRI2_private;
-	void				*SunxiG2D_private;
-	void				*SunxiVideo_private;
+	void					*cpu_backend_private;
+	void					*sunxi_disp_private;
+	void					*fb_copyarea_private;
+	void					*SunxiDispHardwareCursor_private;
+	void					*SunxiMaliDRI2_private;
+	void					*SunxiG2D_private;
+	void					*SunxiVideo_private;
 } FBDevRec, *FBDevPtr;
 
 #define FBDEVPTR(p) ((FBDevPtr)((p)->driverPrivate))

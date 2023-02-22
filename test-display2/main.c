@@ -432,7 +432,8 @@ void bitblt_test(int g2dfd, uint32_t* mem_fbfd_map, unsigned long paddr, int x0,
   }
   for (int y = y0; y < y0 + h; ++y) {
     for (int x = x0; x < x0 + w; ++x) {
-      mem_fbfd_map[x + y * 480] = (((x+y) & 0xFF) << 8) + ~((unsigned char)(x & 0xFF)) + 0xFF000000;
+      mem_fbfd_map[x + y * 480] = ((x + y) * 7) << 8;
+      /*mem_fbfd_map[x + y * 480] = (((x+y) & 0xFF) << 8) + ~((unsigned char)(x & 0xFF)) + 0xFF000000;*/
     }
   }
   printf("==== before ==== (anykey)\n");
@@ -548,7 +549,14 @@ int main() {
     getchar();
   }
 
-  /* SIZE(432,808) ORIGIN(i,217) OFFSET(8,0) results:
+  /*****
+
+  for (int i = 0; i < 100; ++i) {
+	  printf("i = %d\n", i);
+	  bitblt_test(g2dfd, mem_fbfd_map, paddr, i, 217, 432, 808, 8, 0);
+  }
+
+   * SIZE(432,808) ORIGIN(i,217) OFFSET(8,0) results:
    * 0..8
    * 9..15 X
    * 16..24
@@ -595,10 +603,27 @@ int main() {
    * SIZE(100,808) ORIGIN(i,217) OFFSET(120,0) results:
    * SIZE(100,808) ORIGIN(i,217) OFFSET(120,120) results:
    * ALL OK
+   *
+   * SIZE(100,808) ORIGIN(100,i) OFFSET(0,8) results:
+   * ALL BAD
+   *
+   * W = 200 doesn't change the pattern
+   * W = 200+i doesn't change the pattern
+   * X = 200 doesn't change the pattern
+   * H = 100+i doesn't change the pattern
+   *
+   * Pattern seems to be:
+   * Maximum H without distortion = 128
+   *
+   * ... OFFSET(0,30) results:
+   * Confirm maximum H = 128
+   *
+   * ... OFFSET(0,-8) results:
+   * ALL OK
    */
-  for (int i = 0; i < 100; ++i) {
-	  printf("x = %d\n", i);
-	  bitblt_test(g2dfd, mem_fbfd_map, paddr, i, 217, 100, 808, 120, 120);
+  for (int i = 0; i < 1000; ++i) {
+	  printf("i = %d\n", i);
+	  bitblt_test(g2dfd, mem_fbfd_map, paddr, 200, 100 + i, 200, 100+i, 0, -8);
   }
 
   printf("bitblt test END. anykey\n");

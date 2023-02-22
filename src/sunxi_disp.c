@@ -37,7 +37,7 @@
 #include "g2d_driver.h"
 
 // for debug only
-#if 1
+#if 0
 #include <xorg/xf86.h>
 #define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s:L%d:%s\n", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
@@ -49,7 +49,7 @@
 
 /*****************************************************************************/
 
-sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
+sunxi_disp_t *sunxi_disp_init(const char *device, int fb_fd, void *xserver_fbmem)
 {
     sunxi_disp_t *ctx = calloc(sizeof(sunxi_disp_t), 1);
     struct fb_var_screeninfo fb_var;
@@ -61,7 +61,6 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
 
     xf86DrvMsg(0, X_INFO, "sunxi_disp_init: begin\n");
 
-    // TODO let XServer handle fb files and only focus on g2d here
     /* use /dev/fb0 by default */
     if (!device)
         device = "/dev/fb0";
@@ -91,7 +90,7 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
 
     /* display2 has no version check */
 
-    ctx->fd_fb = open(device, O_RDWR);
+    ctx->fd_fb = fb_fd;
     if (ctx->fd_fb < 0) {
         close(ctx->fd_disp);
         free(ctx);
@@ -101,7 +100,6 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
     if (ioctl(ctx->fd_fb, FBIOGET_VSCREENINFO, &fb_var) < 0 ||
         ioctl(ctx->fd_fb, FBIOGET_FSCREENINFO, &fb_fix) < 0)
     {
-        close(ctx->fd_fb);
         close(ctx->fd_disp);
         free(ctx);
         return NULL;
@@ -117,7 +115,6 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
     ctx->gfx_layer_size = ctx->xres * ctx->yres * fb_var.bits_per_pixel / 8;
 
     if (ctx->framebuffer_size < ctx->gfx_layer_size) {
-        close(ctx->fd_fb);
         close(ctx->fd_disp);
         free(ctx);
         return NULL;
@@ -138,7 +135,6 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
                                                 MAP_SHARED, ctx->fd_fb, 0);
         xf86DrvMsg(0, X_INFO, "sunxi_disp_init: using fb fd mapped addr %lx\n", (uintptr_t)ctx->xserver_fbmem);
         if (ctx->framebuffer_addr == MAP_FAILED) {
-            close(ctx->fd_fb);
             close(ctx->fd_disp);
             free(ctx);
             return NULL;
@@ -155,7 +151,6 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
                   ctx->fb_id == 0 ? FBIOGET_LAYER_HDL_1 : FBIOGET_LAYER_HDL_0,
                   &ctx->gfx_layer_id))
         {
-            close(ctx->fd_fb);
             close(ctx->fd_disp);
             free(ctx);
             return NULL;
@@ -165,7 +160,6 @@ sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
 
     if (sunxi_layer_reserve(ctx) < 0)
     {
-        close(ctx->fd_fb);
         close(ctx->fd_disp);
         free(ctx);
         return NULL;
@@ -190,7 +184,6 @@ int sunxi_disp_close(sunxi_disp_t *ctx)
         /* close descriptors */
         if (!ctx->xserver_fbmem)
             munmap(ctx->framebuffer_addr, ctx->framebuffer_size);
-        close(ctx->fd_fb);
         close(ctx->fd_disp);
         ctx->fd_disp = -1;
         free(ctx);
@@ -198,17 +191,16 @@ int sunxi_disp_close(sunxi_disp_t *ctx)
     return 0;
 }
 
-static int sunxi_layer_get_config(sunxi_disp_t *ctx, int new_mode)
+static int sunxi_layer_get_config(sunxi_disp_t *ctx, int layer_id, struct disp_layer_info *p_info)
 {
-    struct disp_layer_info layer_info;
     unsigned long arg[3];
 
-    if (ctx->layer_id < 0)
+    if (layer_id < 0)
         return -1;
 
     arg[0] = ctx->fb_id;
-    arg[1] = ctx->layer_id;
-    arg[2] = (uintptr_t)&layer_info;
+    arg[1] = layer_id;
+    arg[2] = (uintptr_t)p_info;
     if (ioctl(ctx->fd_disp, DISP_LAYER_GET_CONFIG, arg) < 0)
         return -1;
 
@@ -218,7 +210,9 @@ static int sunxi_layer_get_config(sunxi_disp_t *ctx, int new_mode)
 int sunxi_layer_reserve(sunxi_disp_t *ctx)
 {
   unsigned long arg[3];
+  struct disp_layer_info info;
   struct disp_layer_config config;
+  struct disp_layer_config2 config2;
 
   PRINTLINE();
   // XXX always allocating layer0
@@ -255,52 +249,6 @@ int sunxi_layer_reserve(sunxi_disp_t *ctx)
     return -1;
   }
   return ctx->layer_id;
-    //   struct disp_layer_info layer_info;
-    //   unsigned long tmp[4];
-
-    //   /* try to allocate a layer */
-
-    //   tmp[0] = ctx->fb_id;
-    //   tmp[1] = DISP_LAYER_WORK_MODE_NORMAL;
-    //   ctx->layer_id = ioctl(ctx->fd_disp, DISP_CMD_LAYER_REQUEST, &tmp);
-    //   if (ctx->layer_id < 0)
-    //       return -1;
-
-    //   /* Initially set the layer configuration to something reasonable */
-
-    //   tmp[0] = ctx->fb_id;
-    //   tmp[1] = ctx->layer_id;
-    //   tmp[2] = (uintptr_t)&layer_info;
-    //   if (ioctl(ctx->fd_disp, DISP_LAYER_GET_INFO, tmp) < 0)
-    //       return -1;
-
-    //   /* the screen and overlay layers need to be in different pipes */
-    //   layer_info.pipe      = 1;
-    //   layer_info.alpha_en  = 1;
-    //   layer_info.alpha_val = 255;
-
-    //   layer_info.fb.addr[0] = ctx->framebuffer_paddr;
-    //   layer_info.fb.size.width = 1;
-    //   layer_info.fb.size.height = 1;
-    //   layer_info.fb.format = DISP_FORMAT_ARGB8888;
-    //   layer_info.fb.seq = DISP_SEQ_ARGB;
-    //   layer_info.fb.mode = DISP_MOD_INTERLEAVED;
-
-    //   tmp[0] = ctx->fb_id;
-    //   tmp[1] = ctx->layer_id;
-    //   tmp[2] = (uintptr_t)&layer_info;
-    //   if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_SET_PARA, tmp) < 0)
-    //       return -1;
-
-    //   /* Now probe the scaler mode to see if there is a free scaler available */
-    //   if (sunxi_layer_change_work_mode(ctx, DISP_LAYER_WORK_MODE_SCALER) == 0)
-
-    //   /* Revert back to normal mode */
-    //   sunxi_layer_change_work_mode(ctx, DISP_LAYER_WORK_MODE_NORMAL);
-    //   ctx->layer_scaler_is_enabled = 0;
-    //   ctx->layer_format = DISP_FORMAT_ARGB8888;
-
-    //   return ctx->layer_id;
 }
 
 
@@ -787,6 +735,7 @@ int sunxi_g2d_blt(void               *self,
     uint8_t dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
     uint8_t is_samebuffer = (src_bits == dst_bits);
     uint8_t x_is_overlapped = (src_x < dst_x && dst_x <= src_x + w) || (dst_x < src_x && src_x <= dst_x + w);
+    uint8_t y_is_overlapped = (src_y < dst_y && dst_y <= src_y + h) || (dst_y < src_y && src_y <= dst_y + h);
     unsigned long shadow_paddr = disp->framebuffer_paddr + 1280 * 480 * 4;
 
     static uint32_t *tmp_bits = NULL;
@@ -906,6 +855,13 @@ int sunxi_g2d_blt(void               *self,
 		    src_x_mod = src_x & 0xf;
 		    delta_x -= dx;
 	    }
+    }
+    // Y axis forward: not fully supported
+    else if (dst_y > src_y && src_x == dst_x && y_is_overlapped) {
+      while(h > 128) {
+		    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, src_y + h - 128, src_x, dst_y + h - 128, w, 128);
+        h -= 128;
+      }
     }
 
     memset(&cmd, 0, sizeof(cmd));
