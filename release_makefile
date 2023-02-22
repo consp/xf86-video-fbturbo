@@ -1,0 +1,7 @@
+install:
+	/usr/bin/mkdir -p '/usr/lib/xorg/modules/drivers'
+	/bin/bash ./libtool   --mode=install /usr/bin/install -c   fbturbo_drv.la '/usr/lib/xorg/modules/drivers'
+	/usr/bin/install -m644 ./10-d1.conf /etc/X11/xorg.conf.d/
+	/usr/bin/install -m644 devterm-r01-dispfd-daemon.service /etc/systemd/system/
+	/usr/bin/install r01-dispfd-daemon.elf /usr/local/bin/
+	/usr/bin/systemctl daemon-reload

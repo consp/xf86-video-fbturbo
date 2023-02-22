@@ -450,7 +450,7 @@ int main() {
     exit(-1);
   }
 
-  int step_fds = 0;
+  int step_fds = 1;
   
   if (step_fds) {
     printf("dispfd is now open. anykey\n");
@@ -467,6 +467,26 @@ int main() {
   if (step_fds) {
     printf("fbfd is now open. anykey\n");
     getchar();
+  }
+
+  // NOTE: at this moment, the fb console display is restored.
+  // this test program shares framebuffer with fb console. 
+  // if previous test artifacts are shown, blind type `clear` to make the fb console redraw the buffer.
+  // however, after the program exits, the fb console display is disabled again...
+  // return 0;
+
+  if (step_fds) {
+    close(fbfd);
+    printf("fbfd is now close. anykey\n");
+    getchar();
+
+	// NOTE: at this moment, the fb console display is still active.
+
+    close(dispfd);
+    printf("dispfd is now close. anykey\n");
+    getchar();
+
+	return 0;
   }
 
   int g2dfd = open("/dev/g2d", O_RDWR);

@@ -1,0 +1,11 @@
+[Unit]
+Description=devterm r01 display engine daemon
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/r01-dispfd-daemon.elf
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -37,7 +37,7 @@
 #include "g2d_driver.h"
 
 // for debug only
-#if 0
+#if 1
 #include <xorg/xf86.h>
 #define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s:L%d:%s\n", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
@@ -167,6 +167,12 @@ sunxi_disp_t *sunxi_disp_init(const char *device, int fb_fd, void *xserver_fbmem
 
     ctx->fd_g2d = open("/dev/g2d", O_RDWR);
 
+    if (ctx->fd_g2d < 0) {
+      close(ctx->fd_disp);
+      free(ctx);
+      return NULL;
+    }
+
     ctx->blt2d.self = ctx;
     ctx->blt2d.overlapped_blt = sunxi_g2d_blt;
 
@@ -210,11 +216,27 @@ static int sunxi_layer_get_config(sunxi_disp_t *ctx, int layer_id, struct disp_l
 int sunxi_layer_reserve(sunxi_disp_t *ctx)
 {
   unsigned long arg[3];
-  struct disp_layer_info info;
+  struct disp_layer_info info[4];
   struct disp_layer_config config;
-  struct disp_layer_config2 config2;
 
   PRINTLINE();
+  xf86DrvMsg(0, X_INFO, "sunxi_layer_reserve: dumping original config: \n");
+  memset(info, 0, sizeof(info));
+  for (int i = 0; i < 4; ++i) {
+    sunxi_layer_get_config(ctx, i, info + i);
+    PRINTD(i);
+    PRINTD(info[i].mode);
+    PRINTD(info[i].id);
+    PRINTD(info[i].screen_win.x);
+    PRINTD(info[i].screen_win.y);
+    PRINTD(info[i].screen_win.width);
+    PRINTD(info[i].screen_win.height);
+    PRINTD(info[i].zorder);
+    PRINTD(info[i].fb.addr[0]);
+    PRINTD(info[i].fb.size[0].width);
+  }
+
+
   // XXX always allocating layer0
   ctx->layer_id = 0;
 
