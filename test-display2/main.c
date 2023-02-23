@@ -424,23 +424,32 @@ void rotate_test(uint32_t *mem_fbfd_map, uint32_t *mem_shadow,
 #define GREEN 0xff00ff00
 #define BLUE  0xff0000ff
 
-void bitblt_test(int g2dfd, uint32_t* mem_fbfd_map, unsigned long paddr, int x0, int y0, int w, int h, int delta_x, int delta_y) {
-  for (int y = 0; y < 480; ++y) {
-    for (int x = 0; x < 1280; ++x) {
-      mem_fbfd_map[x + y * 1280] = WHITE;
-    }
-  }
+int bitblt_test(int g2dfd, uint32_t* mem_fbfd_map, unsigned long paddr, int x0, int y0, int w, int h, int delta_x, int delta_y) {
+  // for (int y = 0; y < 480; ++y) {
+  //   for (int x = 0; x < 1280; ++x) {
+  //     mem_fbfd_map[x + y * 1280] = WHITE;
+  //   }
+  // }
+
   for (int y = y0; y < y0 + h; ++y) {
     for (int x = x0; x < x0 + w; ++x) {
       mem_fbfd_map[x + y * 480] = ((x + y) * 7) << 8;
       /*mem_fbfd_map[x + y * 480] = (((x+y) & 0xFF) << 8) + ~((unsigned char)(x & 0xFF)) + 0xFF000000;*/
     }
   }
-  printf("==== before ==== (anykey)\n");
-  getchar();
+
   bitblt(g2dfd, paddr, x0, y0, x0 + delta_x, y0 + delta_y, w, h);
-  printf("==== after ==== (anykey)\n");
-  getchar();
+  // verify
+  int error = 0;
+
+  for (int y = y0; y < y0 + h; ++y) {
+    for (int x = x0; x < x0 + w; ++x) {
+      int val = ((x + y) * 7) << 8;
+      error = error + (mem_fbfd_map[x + delta_x + (y + delta_y) * 480] != val);
+    }
+  }
+
+  return error;
 }
 
 int main() {
@@ -450,7 +459,7 @@ int main() {
     exit(-1);
   }
 
-  int step_fds = 1;
+  int step_fds = 0;
   
   if (step_fds) {
     printf("dispfd is now open. anykey\n");
@@ -539,8 +548,8 @@ int main() {
     disp_layer_set_config(dispfd, (uint32_t*)paddr);
     system("dmesg | tail");
     printf("screen is initialized\n");
-    printf("anykey\n");
-    getchar();
+    // printf("anykey\n");
+    // getchar();
   }
 
   if (0) {
@@ -589,7 +598,6 @@ int main() {
    * X + 1 doesn't change the pattern.
    * Width + 1 doesn't change the pattern.
    * Delta X + 1 DOES change the pattern.
-   * TODO Moving Y?
    *
    * ... OFFSET(9,0) results:
    * 0..7
@@ -640,16 +648,58 @@ int main() {
    *
    * ... OFFSET(0,-8) results:
    * ALL OK
+   *
+   * ... OFFSET(0,95) results:
+   * Y = i doesn't change the pattern
+   * X = i DOES affect the pattern
+   *   - when X % 16 == 0: max H = 128
+   *   - when X % 16 != 0: max H = 96
+   *
+   * w=200, h = 64, x=i, y=400, offset=(0,j) results (j=):
+   * ALL OK
+   * 
+   * w=200, h = 96, x=i, y=400, offset=(0,j) results (j=):
+   * 35 38 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+   * w=200, h = 96, x=i, y=401, offset=(0,j) results (j=):
+   *    31 37 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+   * w=200, h = 80, x=i, y=400, offset=(0,j) results (j=):
+   *    65 66 67 68 69 70 71 72 73 74 75 76 77 78 79
+   * w=200, h = 80, x=i, y=401, offset=(0,j) results (j=):
+   *       66 67    69 70    72 73 74 75 76 77 78 79 
+   * w=200, h = 80, x=i, y=402, offset=(0,j) results (j=):
+   * 64 65 66 67 68 69 70 71 72 73    75 76 77 78 79
+   * w=200, h = 80, x=i, y=403, offset=(0,j) results (j=):
+   *    65 66 67 68 69 70 71 72 73 74 75 76 77 78 79
+   * w=200, h = 80, x=i, y=404, offset=(0,j) results (j=):
+   * 64 65 66 67    69 70    72    74 75 76 77 78 79
+   * ... conclusion: H=80 good for delta_y < 64
+   * w=200, h = 96, x=i, y=200..400, offset=(0,j) results (j=):
+   * ... conclusion: H=96 good for delta_y < 31
+   * w=200, h = 128, x=i, y=200..400, offset=(0,j) results (j=):
+   * ... conclusion: H=128 good for delta_y < 8
    */
-  for (int i = 0; i < 1000; ++i) {
-	  printf("i = %d\n", i);
-	  bitblt_test(g2dfd, mem_fbfd_map, paddr, 200, 100 + i, 200, 100+i, 0, -8);
-  }
+	int err;
+	int H = 128;
+	for (int k = 201; k < 400; ++k) {
+		printf("testing x=%d\n", k);
+		for (int j = 1; j < H; ++j) {
+			printf("testing offset(0, %d)\n", j);
+			for (int i = 0; i < 280; ++i) {
+				err = bitblt_test(g2dfd, mem_fbfd_map, paddr, i, k, 200, H, 0, j);
+				if (err != 0) {
+					printf("i = %d, error = %d\n", i, err);
+					break;
+				}
+			}
+			if (err == 0) {
+				printf("TEST PASSED\n");
+			} else {
+				break;
+			}
+		}
+	}
 
   printf("bitblt test END. anykey\n");
-  getchar();
-
-  system("dmesg | tail");
 
   // release
   if (0) {

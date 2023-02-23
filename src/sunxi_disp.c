@@ -37,14 +37,16 @@
 #include "g2d_driver.h"
 
 // for debug only
-#if 1
+#if 0
 #include <xorg/xf86.h>
 #define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s:L%d:%s\n", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
+#define PRINTLN(...) xf86DrvMsg(0, X_INFO, __VA_ARGS__)
 #else
 #define PRINTLINE() {}
 #define PRINTD(x) {}
 #define xf86DrvMsg(...) {}
+#define PRINTLN(...) {}
 #endif
 
 /*****************************************************************************/
@@ -756,8 +758,8 @@ int sunxi_g2d_blt(void               *self,
     uint8_t src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
     uint8_t dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
     uint8_t is_samebuffer = (src_bits == dst_bits);
-    uint8_t x_is_overlapped = (src_x < dst_x && dst_x <= src_x + w) || (dst_x < src_x && src_x <= dst_x + w);
-    uint8_t y_is_overlapped = (src_y < dst_y && dst_y <= src_y + h) || (dst_y < src_y && src_y <= dst_y + h);
+    uint8_t x_is_overlapped = (src_x <= dst_x && dst_x < src_x + w) || (dst_x <= src_x && src_x < dst_x + w);
+    uint8_t y_is_overlapped = (src_y <= dst_y && dst_y < src_y + h) || (dst_y <= src_y && src_y < dst_y + h);
     unsigned long shadow_paddr = disp->framebuffer_paddr + 1280 * 480 * 4;
 
     static uint32_t *tmp_bits = NULL;
@@ -819,14 +821,16 @@ int sunxi_g2d_blt(void               *self,
       return FALLBACK_BLT();
     }
 
-    // xf86DrvMsg(0, X_INFO, "%dx%d, src(%d,%d) -> dst(%d,%d)\n",
-    //     w, h, src_x, src_y, dst_x, dst_y);
+    PRINTLN("%dx%d, src(%d,%d) -> dst(%d,%d)\n",
+        w, h, src_x, src_y, dst_x, dst_y);
 
-    if (src_y != dst_y && src_x != dst_x && x_is_overlapped) {
+    if (src_y != dst_y && src_x != dst_x && (x_is_overlapped || y_is_overlapped)) {
 	    // don't do delta x & y in one run.
 	    // corners are damaged!
 	    int cx1, cx2, cy1, cy2;
 	    int cw, ch;
+	    PRINTLN("  xy mitigation\n");
+
 	    if (dst_x < src_x) {
 		    if (dst_y < src_y) {
 			    cx1 = dst_x + w;
@@ -879,10 +883,23 @@ int sunxi_g2d_blt(void               *self,
 	    }
     }
     // Y axis forward: not fully supported
+    // max value is dependant on Y value
     else if (dst_y > src_y && src_x == dst_x && y_is_overlapped) {
-      while(h > 128) {
-		    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, src_y + h - 128, src_x, dst_y + h - 128, w, 128);
-        h -= 128;
+      int delta_y = (dst_y - src_y);
+      int m_h;
+      if (delta_y < 8) {
+      	m_h = 128;
+      } else if (delta_y < 31) {
+        m_h = 96;
+      } else if (delta_y < 64) {
+        m_h = 80;
+      } else {
+        m_h = 64;
+      }
+      while(h > m_h) {
+      		    PRINTLN("  y mitigation, h = %d, mh = %d\n", h, m_h);
+		    sunxi_g2d_blt(self, src_bits, dst_bits, src_stride, dst_stride, src_bpp, dst_bpp, src_x, src_y + h - m_h, src_x, dst_y + h - m_h, w, m_h);
+        h -= m_h;
       }
     }
 
