@@ -37,7 +37,7 @@
 #include "g2d_driver.h"
 
 // for debug only
-#if 0
+#if 1
 #include <xorg/xf86.h>
 #define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s:L%d:%s\n", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
@@ -207,7 +207,7 @@ static int sunxi_layer_get_config(sunxi_disp_t *ctx, int layer_id, struct disp_l
         return -1;
 
     arg[0] = ctx->fb_id;
-    arg[1] = layer_id;
+    arg[1] = layer_id + 1;
     arg[2] = (uintptr_t)p_info;
     if (ioctl(ctx->fd_disp, DISP_LAYER_GET_CONFIG, arg) < 0)
         return -1;

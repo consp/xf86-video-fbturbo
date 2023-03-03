@@ -219,6 +219,9 @@ void fb_info(int fbfd, unsigned long *paddr, __u32 *psize) {
     printf("ioctl layer hdl 1 fail\n");
   }
   PRINTD(gfx_layer_id1);
+
+  PRINTLX(fb_fix.smem_start);
+  PRINTLX(fb_fix.smem_len);
 }
 
 void fillrect(int g2dfd,
@@ -452,132 +455,7 @@ int bitblt_test(int g2dfd, uint32_t* mem_fbfd_map, unsigned long paddr, int x0, 
   return error;
 }
 
-int main() {
-  int dispfd = open("/dev/disp", O_RDWR);
-  printf("dispfd=%d\n", dispfd);
-  if (dispfd < 0) {
-    exit(-1);
-  }
-
-  int step_fds = 0;
-  
-  if (step_fds) {
-    printf("dispfd is now open. anykey\n");
-    getchar();
-  }
-
-
-  int fbfd = open("/dev/fb0", O_RDWR);
-  printf("fbfd=%d\n", fbfd);
-  if (fbfd < 0) {
-    close(dispfd);
-    exit(-1);
-  }
-  if (step_fds) {
-    printf("fbfd is now open. anykey\n");
-    getchar();
-  }
-
-  // NOTE: at this moment, the fb console display is restored.
-  // this test program shares framebuffer with fb console. 
-  // if previous test artifacts are shown, blind type `clear` to make the fb console redraw the buffer.
-  // however, after the program exits, the fb console display is disabled again...
-  // return 0;
-
-  if (step_fds) {
-    close(fbfd);
-    printf("fbfd is now close. anykey\n");
-    getchar();
-
-	// NOTE: at this moment, the fb console display is still active.
-
-    close(dispfd);
-    printf("dispfd is now close. anykey\n");
-    getchar();
-
-	return 0;
-  }
-
-  int g2dfd = open("/dev/g2d", O_RDWR);
-  printf("g2dfd=%d\n", fbfd);
-  if (g2dfd < 0) {
-    close(fbfd);
-    close(dispfd);
-    exit(-1);
-  }
-
-  if (step_fds) {
-    printf("g2dfd is now open. anykey\n");
-    getchar();
-  }
-
-
-  unsigned long paddr, paddr_2;
-  unsigned int psize;
-  fb_info(fbfd, &paddr, &psize);
-  paddr_2 = paddr + 1280 * 480 * 4;
-  uint32_t* mem_fbfd_map;
-  uint32_t* mem_shadow;
-
-  scn_size(dispfd);
-  // device_switch(dispfd, (unsigned long)DISP_OUTPUT_TYPE_LCD);
-  output_type(dispfd);
-  // system("dmesg | tail");
-  // set_bkcolor(dispfd);
-  device_get_config(dispfd);
-  disp_layer_get_config(dispfd);
-  // disp_layer_get_info(dispfd);
-  //
-  // printf("anykey\n");
-  // getchar();
-
-  if (1) {
-    mem_fbfd_map = mmap(0, psize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
-    mem_shadow = mem_fbfd_map + 1280*480;
-    // uint32_t* mem_fbfd_map = malloc(1280 * 480 * 4); <<- doesn't work. need to pass in physical addr
-    for (int y = 0; y < 480; ++y) {
-      for (int x = 0; x < 1280; ++x) {
-        /*mem_fbfd_map[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
-        /*mem_shadow[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
-        // mem_fbfd_map[x + y * 480] = 0xFFFFFFFF;
-        mem_fbfd_map[x + y * 1280] = 0xFFFFFFFF;
-      }
-    }
-  }
-  if (1) {
-    disp_layer_set_config(dispfd, (uint32_t*)paddr);
-    system("dmesg | tail");
-    printf("screen is initialized\n");
-    // printf("anykey\n");
-    // getchar();
-  }
-
-  if (0) {
-    printf("anykey to proceed to fillrect test\n");
-    getchar();
-
-    srand(time(NULL));
-    fill_test(mem_fbfd_map, g2dfd, paddr, 10, 10, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 30, 30, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 50, 50, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 70, 70, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 90, 90, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 100, 100, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 100, 100, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 200, 200, 10000);
-    fill_test(mem_fbfd_map, g2dfd, paddr, 300, 300, 10000);
-
-    printf("anykey\n");
-    getchar();
-  }
-
-  // note: in-place rotation is not supported.
-  if (0) {
-    rotate_test(mem_shadow, mem_fbfd_map, paddr_2, paddr, g2dfd);
-    printf("anykey\n");
-    getchar();
-  }
-
+void bitblt_verify(uint32_t* mem_fbfd_map, int g2dfd, unsigned long paddr) {
   /*****
 
   for (int i = 0; i < 100; ++i) {
@@ -700,6 +578,140 @@ int main() {
 	}
 
   printf("bitblt test END. anykey\n");
+
+}
+
+int main() {
+  int dispfd = open("/dev/disp", O_RDWR);
+  printf("dispfd=%d\n", dispfd);
+  if (dispfd < 0) {
+    exit(-1);
+  }
+
+  int step_fds = 1;
+  
+  if (step_fds) {
+    printf("dispfd is now open. anykey\n");
+    getchar();
+  }
+
+
+  int fbfd = open("/dev/fb0", O_RDWR);
+  printf("fbfd=%d\n", fbfd);
+  if (fbfd < 0) {
+    close(dispfd);
+    exit(-1);
+  }
+  if (step_fds) {
+    printf("fbfd is now open. anykey\n");
+    getchar();
+  }
+
+  // NOTE: at this moment, the fb console display is restored.
+  // this test program shares framebuffer with fb console. 
+  // if previous test artifacts are shown, blind type `clear` to make the fb console redraw the buffer.
+  // however, after the program exits, the fb console display is disabled again...
+  // return 0;
+
+  if (0) {
+    close(fbfd);
+    printf("fbfd is now close. anykey\n");
+    getchar();
+
+	// NOTE: at this moment, the fb console display is still active.
+
+    close(dispfd);
+    printf("dispfd is now close. anykey\n");
+    getchar();
+
+	return 0;
+  }
+
+  int g2dfd = open("/dev/g2d", O_RDWR);
+  printf("g2dfd=%d\n", fbfd);
+  if (g2dfd < 0) {
+    close(fbfd);
+    close(dispfd);
+    exit(-1);
+  }
+
+  if (step_fds) {
+    printf("g2dfd is now open. anykey\n");
+    getchar();
+  }
+
+
+  unsigned long paddr, paddr_2;
+  unsigned int psize;
+  fb_info(fbfd, &paddr, &psize);
+  paddr_2 = paddr + 1280 * 480 * 4;
+  uint32_t* mem_fbfd_map;
+  uint32_t* mem_shadow;
+
+  scn_size(dispfd);
+  // device_switch(dispfd, (unsigned long)DISP_OUTPUT_TYPE_LCD);
+  output_type(dispfd);
+  // system("dmesg | tail");
+  // set_bkcolor(dispfd);
+  device_get_config(dispfd);
+  disp_layer_get_config(dispfd);
+  // disp_layer_get_info(dispfd);
+  //
+  // printf("anykey\n");
+  // getchar();
+
+  if (1) {
+    mem_fbfd_map = mmap(0, psize, PROT_READ | PROT_WRITE, MAP_SHARED, fbfd, 0);
+    mem_shadow = mem_fbfd_map + 1280*480;
+    // uint32_t* mem_fbfd_map = malloc(1280 * 480 * 4); <<- doesn't work. need to pass in physical addr
+    for (int y = 0; y < 480; ++y) {
+      for (int x = 0; x < 1280; ++x) {
+        /*mem_fbfd_map[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
+        /*mem_shadow[x + y * 1280] = ((x & 0xFF) << 8) + 0xFF000000;*/
+        // mem_fbfd_map[x + y * 480] = 0xFFFFFFFF;
+        mem_fbfd_map[x + y * 1280] = 0xFFFFFFFF;
+      }
+    }
+  }
+  if (1) {
+    disp_layer_set_config(dispfd, (uint32_t*)paddr);
+    system("dmesg | tail");
+    printf("screen is initialized\n");
+    // printf("anykey\n");
+    // getchar();
+  }
+
+  if (1) {
+    printf("anykey to proceed to fillrect test\n");
+    getchar();
+
+    srand(time(NULL));
+    fill_test(mem_fbfd_map, g2dfd, paddr, 10, 10, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 30, 30, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 50, 50, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 70, 70, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 90, 90, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 100, 100, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 100, 100, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 200, 200, 10000);
+    fill_test(mem_fbfd_map, g2dfd, paddr, 300, 300, 10000);
+
+    printf("anykey\n");
+    getchar();
+  }
+
+  // note: in-place rotation is not supported.
+  if (0) {
+    rotate_test(mem_shadow, mem_fbfd_map, paddr_2, paddr, g2dfd);
+    printf("anykey\n");
+    getchar();
+  }
+
+  if (0) {
+    bitblt_verify(mem_fbfd_map, g2dfd, paddr);
+    printf("anykey\n");
+    getchar();
+  }
 
   // release
   if (0) {
