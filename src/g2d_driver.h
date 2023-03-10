@@ -320,6 +320,11 @@ enum color_range {
 	COLOR_RANGE_16_235 = 1,
 };
 
+typedef struct {
+	__u32 w;
+	__u32 h;
+} g2d_size;
+
 /* image struct */
 typedef struct {
 	int		 bbuff;
@@ -332,6 +337,7 @@ typedef struct {
 	__u32		 align[3];
 
 	g2d_rect	 clip_rect;
+	g2d_size	 resize;
 	g2d_coor	 coor;
 
 	g2d_color_gmt	 gamut;
