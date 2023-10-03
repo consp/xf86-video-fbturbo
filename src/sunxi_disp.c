@@ -247,14 +247,14 @@ int sunxi_layer_reserve(sunxi_disp_t *ctx)
   config.layer_id = ctx->layer_id;//layer index in the blending channel
   config.enable = 1;
   config.info.mode = LAYER_MODE_BUFFER;
-  config.info.fb.addr[0] = (unsigned long long)ctx->framebuffer_paddr; //FB 地址
+  config.info.fb.addr[0] = (unsigned long long)ctx->framebuffer_paddr; //FB address
   config.info.fb.size[0].width = 1;
   config.info.fb.align[0] = 4;//bytes
   config.info.fb.format = DISP_FORMAT_ARGB_8888; //DISP_FORMAT_YUV420_P
   config.info.fb.crop.x = 0;
   config.info.fb.crop.y = 0;
-  config.info.fb.crop.width = ((unsigned long)1)<<32;//定点小数。高32bit 为整数，低32bit 为小数
-  config.info.fb.crop.height= ((unsigned long)1)<<32;//定点小数。高32bit 为整数，低32bit 为小数
+  config.info.fb.crop.width = ((unsigned long)1)<<32;//Fixed point decimal. The high 32 bits are integers, the low 32 bits are decimals
+  config.info.fb.crop.height= ((unsigned long)1)<<32;//Fixed point decimal. The high 32 bits are integers, the low 32 bits are decimals
   config.info.fb.flags = DISP_BF_NORMAL;
   config.info.fb.scan = DISP_SCAN_PROGRESSIVE;
   config.info.alpha_mode = 1; //global pixel alpha
@@ -756,14 +756,14 @@ int sunxi_g2d_blt(void               *self,
     int blt_size_threshold;
     g2d_blt_h cmd;
 
-    int screen_bits = disp->xres * disp->yres * (disp->bits_per_pixel / 8);
-
-    uint8_t src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= screen_bits;
-    uint8_t dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= screen_bits;
+    uint8_t src_is_shadow = (uint8_t *)src_bits >= disp->framebuffer_addr + disp->framebuffer_size;
+    uint8_t dst_is_shadow = (uint8_t *)dst_bits >= disp->framebuffer_addr + disp->framebuffer_size;
     uint8_t is_samebuffer = (src_bits == dst_bits);
     uint8_t x_is_overlapped = (src_x <= dst_x && dst_x < src_x + w) || (dst_x <= src_x && src_x < dst_x + w);
     uint8_t y_is_overlapped = (src_y <= dst_y && dst_y < src_y + h) || (dst_y <= src_y && src_y < dst_y + h);
-    unsigned long shadow_paddr = disp->framebuffer_paddr + screen_bits;
+
+    unsigned long src_paddr = disp->framebuffer_paddr + ((uint8_t *)src_bits - disp->framebuffer_addr);
+    unsigned long dst_paddr = disp->framebuffer_paddr + ((uint8_t *)dst_bits - disp->framebuffer_addr);
 
     static uint32_t *tmp_bits = NULL;
     static size_t tmp_sz = 0;
@@ -912,7 +912,7 @@ int sunxi_g2d_blt(void               *self,
     cmd.src_image_h.width = disp->xres;
     cmd.src_image_h.height = disp->framebuffer_height;
     cmd.src_image_h.align[0] = 4;
-    cmd.src_image_h.laddr[0] = shadow_paddr;
+    cmd.src_image_h.laddr[0] = src_paddr;
     cmd.src_image_h.alpha = 0xFF;
     cmd.src_image_h.format = G2D_FORMAT_ARGB8888;
     cmd.src_image_h.mode = G2D_PIXEL_ALPHA;
@@ -925,7 +925,7 @@ int sunxi_g2d_blt(void               *self,
     cmd.dst_image_h.width = disp->xres;
     cmd.dst_image_h.height = disp->framebuffer_height;
     cmd.dst_image_h.align[0] = 4;
-    cmd.dst_image_h.laddr[0] = shadow_paddr;
+    cmd.dst_image_h.laddr[0] = dst_paddr;
     cmd.dst_image_h.alpha = 0xFF;
     cmd.dst_image_h.format = G2D_FORMAT_ARGB8888;
     cmd.dst_image_h.mode = G2D_PIXEL_ALPHA;
