@@ -909,7 +909,7 @@ int sunxi_g2d_blt(void               *self,
     memset(&cmd, 0, sizeof(cmd));
     cmd.flag_h = G2D_ROT_0;
     cmd.src_image_h.use_phy_addr = 1;
-    cmd.src_image_h.width = disp->yres;
+    cmd.src_image_h.width = disp->framebuffer_height;
     cmd.src_image_h.height = disp->xres;
     cmd.src_image_h.align[0] = 4;
     cmd.src_image_h.laddr[0] = shadow_paddr;
@@ -922,7 +922,7 @@ int sunxi_g2d_blt(void               *self,
     cmd.src_image_h.clip_rect.h = h;
 
     cmd.dst_image_h.use_phy_addr = 1;
-    cmd.dst_image_h.width = disp->yres;
+    cmd.dst_image_h.width = disp->framebuffer_height;
     cmd.dst_image_h.height = disp->xres;
     cmd.dst_image_h.align[0] = 4;
     cmd.dst_image_h.laddr[0] = shadow_paddr;
@@ -946,7 +946,7 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   memset(&cmd, 0, sizeof(cmd));
   cmd.flag_h = G2D_ROT_90;
   cmd.src_image_h.use_phy_addr = 1;
-  cmd.src_image_h.width = disp->yres;
+  cmd.src_image_h.width = disp->framebuffer_height;
   cmd.src_image_h.height = disp->xres;
   cmd.src_image_h.align[0] = 4;
   cmd.src_image_h.laddr[0] = src_paddr;
@@ -955,12 +955,12 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   cmd.src_image_h.mode = G2D_PIXEL_ALPHA;
   cmd.src_image_h.clip_rect.x = 0;
   cmd.src_image_h.clip_rect.y = 0;
-  cmd.src_image_h.clip_rect.w = disp->yres;
+  cmd.src_image_h.clip_rect.w = disp->framebuffer_height;
   cmd.src_image_h.clip_rect.h = disp->xres;
 
   cmd.dst_image_h.use_phy_addr = 1;
   cmd.dst_image_h.width = disp->xres;
-  cmd.dst_image_h.height = disp->yres;
+  cmd.dst_image_h.height = disp->framebuffer_height;
   cmd.dst_image_h.align[0] = 4;
   cmd.dst_image_h.laddr[0] = dst_paddr;
   cmd.dst_image_h.alpha = 0xFF;
@@ -969,7 +969,7 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   cmd.dst_image_h.clip_rect.x = 0;
   cmd.dst_image_h.clip_rect.y = 0;
   cmd.dst_image_h.clip_rect.w = disp->xres;
-  cmd.dst_image_h.clip_rect.h = disp->yres;
+  cmd.dst_image_h.clip_rect.h = disp->framebuffer_height;
 
   if(ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &cmd) < 0) {
     return -1;
