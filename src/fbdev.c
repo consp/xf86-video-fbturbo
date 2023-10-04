@@ -805,7 +805,7 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 
 	if (fPtr->shadowFB) {
 		xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Assigning shadow %d,%d @ %d\n", pScrn->virtualX, pScrn->virtualY, pScrn->bitsPerPixel);
-		fPtr->shadow = fPtr->fbmem + pScrn->virtualX * pScrn->virtualY * (pScrn->bitsPerPixel / 8);
+		fPtr->shadow = fPtr->fbstart + pScrn->virtualX * pScrn->virtualY * (pScrn->bitsPerPixel / 8);
 
 		if (!fPtr->shadow) {
 			xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to allocate shadow framebuffer\n");
