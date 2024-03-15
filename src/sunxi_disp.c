@@ -976,51 +976,10 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
 
 int sunxi_layer_set_colorkey(sunxi_disp_t *ctx, uint32_t color)
 {
-    uint32_t tmp[4];
-    __disp_colorkey_t colorkey;
-    __disp_color_t disp_color;
+    return 0;
+}
 
-    disp_color.alpha = (color >> 24) & 0xFF;
-    disp_color.red   = (color >> 16) & 0xFF;
-    disp_color.green = (color >> 8)  & 0xFF;
-    disp_color.blue  = (color >> 0)  & 0xFF;
-
-    colorkey.ck_min = disp_color;
-    colorkey.ck_max = disp_color;
-    colorkey.red_match_rule   = 2;
-    colorkey.green_match_rule = 2;
-    colorkey.blue_match_rule  = 2;
-
-    tmp[0] = ctx->fb_id;
-    tmp[1] = (uintptr_t)&colorkey;
-    if (ioctl(ctx->fd_disp, DISP_CMD_SET_COLORKEY, &tmp))
-        return -1;
-
-    /* Set the overlay layer below the screen layer */
-    tmp[0] = ctx->fb_id;
-    tmp[1] = ctx->gfx_layer_id;
-    if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_BOTTOM, &tmp) < 0)
-        return -1;
-
-    tmp[0] = ctx->fb_id;
-    tmp[1] = ctx->layer_id;
-    if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_BOTTOM, &tmp) < 0)
-        return -1;
-
-    /* Enable color key for the overlay layer */
-    tmp[0] = ctx->fb_id;
-    tmp[1] = ctx->layer_id;
-    if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_CK_ON, &tmp) < 0)
-        return -1;
-
-    /* Disable color key and enable global alpha for the screen layer */
-    tmp[0] = ctx->fb_id;
-    tmp[1] = ctx->gfx_layer_id;
-    if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_CK_OFF, &tmp) < 0)
-        return -1;
-
-    tmp[0] = ctx->fb_id;
-    tmp[1] = ctx->gfx_layer_id;
-    if (ioctl(ctx->fd_disp, DISP_CMD_LAYER_ALPHA_ON, &tmp) < 0)
-        return -1;
+int sunxi_layer_disable_colorkey(sunxi_disp_t *ctx) {
+    return 0;
+}
 
