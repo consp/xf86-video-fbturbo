@@ -51,7 +51,6 @@
 
 #include "sunxi_disp.h"
 #include "sunxi_x_g2d.h"
-#include "sunxi_disp_hwcursor.h"
 #include "sunxi_video.h"
 
 /* for visuals */
@@ -171,8 +170,6 @@ static const OptionInfoRec FBDevOptions[] = {
 	{ OPTION_ROTATE,	"Rotate",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_FBDEV,		"fbdev",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_DEBUG,		"debug",	OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_HW_CURSOR,	"HWCursor",	OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_SW_CURSOR,	"SWCursor",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_SWAPBUFFERS_WAIT,"SwapbuffersWait",OPTV_BOOLEAN,{0},	FALSE },
 	{ OPTION_ACCELMETHOD,	"AccelMethod",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_XV_OVERLAY,	"XVHWOverlay",	OPTV_BOOLEAN,	{0},	FALSE },
@@ -809,9 +806,9 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	fPtr->fbstart = fPtr->fbmem + fPtr->fboff;
 
 	if (fPtr->shadowFB) {
-      fPtr->shadow = fPtr->fbmem + 1280 * 480 * 4;
-			/*fPtr->shadow = calloc(1, pScrn->virtualX * pScrn->virtualY **/
-					/*pScrn->bitsPerPixel);*/
+      /* fPtr->shadow = fPtr->fbmem + 1280 * 480 * 4; */
+			fPtr->shadow = calloc(1, pScrn->virtualX * pScrn->virtualY *
+					pScrn->bitsPerPixel);
 
 	    if (!fPtr->shadow) {
 		xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
@@ -1047,21 +1044,6 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 	    }
 	}
 #endif
-
-	if (fPtr->rotate == FBDEV_ROTATE_NONE &&
-	    !xf86ReturnOptValBool(fPtr->Options, OPTION_SW_CURSOR, FALSE) &&
-	     xf86ReturnOptValBool(fPtr->Options, OPTION_HW_CURSOR, TRUE)) {
-
-	    fPtr->SunxiDispHardwareCursor_private = SunxiDispHardwareCursor_Init(
-	                                pScreen);
-
-	    if (fPtr->SunxiDispHardwareCursor_private)
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "using hardware cursor\n");
-	    else
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "failed to enable hardware cursor\n");
-	}
 
 	TRACE_EXIT("FBDevScreenInit");
 
