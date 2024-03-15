@@ -52,7 +52,6 @@
 #include "sunxi_disp.h"
 #include "sunxi_x_g2d.h"
 #include "sunxi_disp_hwcursor.h"
-#include "backing_store_tuner.h"
 #include "sunxi_video.h"
 
 /* for visuals */

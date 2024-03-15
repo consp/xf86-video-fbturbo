@@ -38,9 +38,12 @@
 
 // for debug only
 #include <xorg/xf86.h>
+#include "xf86.h"
+#include "xf86_OSproc.h"
+#include "xf86xv.h"
+#include "fbdev_priv.h"
 #define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s L%d\n", __PRETTY_FUNCTION__, __LINE__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
-
 /*****************************************************************************/
 
 sunxi_disp_t *sunxi_disp_init(const char *device, void *xserver_fbmem)
