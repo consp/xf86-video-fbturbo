@@ -966,3 +966,13 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   }
   return 0;
 }
+
+int sunxi_layer_set_colorkey(sunxi_disp_t *ctx, uint32_t color)
+{
+    return 0;
+}
+
+int sunxi_layer_disable_colorkey(sunxi_disp_t *ctx) {
+    return 0;
+}
+
