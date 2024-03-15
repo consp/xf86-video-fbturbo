@@ -39,7 +39,6 @@
 // for debug only
 #if 1
 #include <xorg/xf86.h>
-#define xf86DrvMsg(...) {}
 #define PRINTLINE() xf86DrvMsg(0, X_INFO, "%s L%d\n", __PRETTY_FUNCTION__, __LINE__)
 #define PRINTD(x) xf86DrvMsg(0, X_INFO, "%s=%d\n", #x, x)
 #else
@@ -207,7 +206,7 @@ static int sunxi_layer_get_config(sunxi_disp_t *ctx, int new_mode)
         return -1;
 
     arg[0] = ctx->fb_id;
-    arg[1] = ctx->layer_id;
+    arg[1] = ctx->layer_id + 1;
     arg[2] = (uintptr_t)&layer_info;
     if (ioctl(ctx->fd_disp, DISP_LAYER_GET_CONFIG, arg) < 0)
         return -1;
@@ -849,8 +848,8 @@ int sunxi_g2d_blt(void               *self,
         return FALLBACK_BLT();
     }
 
-    src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
-    dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 1280 * 480 * 4;
+    src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= 800 * 480 * 4;
+    dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 800 * 480 * 4;
 
     if (!src_is_shadow || !dst_is_shadow) {
       PRINTLINE();
@@ -860,13 +859,13 @@ int sunxi_g2d_blt(void               *self,
     xf86DrvMsg(0, X_INFO, "%s: %dx%d, src(%d,%d) -> dst(%d,%d), src_stride=%d, dst_stride=%d\n", __PRETTY_FUNCTION__,
         w, h, src_x, src_y, dst_x, dst_y, src_stride, dst_stride);
 
-    shadow_paddr = disp->framebuffer_paddr + 1280 * 480 * 4;
+    shadow_paddr = disp->framebuffer_paddr + 800 * 480 * 4;
     memset(&tmp, 0, sizeof(tmp));
     //if (src_is_shadow && dst_is_shadow) {
     tmp.flag_h = G2D_ROT_0;
     // tmp.flag_h = 0;
     tmp.src_image_h.use_phy_addr = 1;
-    tmp.src_image_h.width = 1280;
+    tmp.src_image_h.width = 800;
     tmp.src_image_h.height = 480;
     tmp.src_image_h.align[0] = 4;
     tmp.src_image_h.laddr[0] = shadow_paddr;
@@ -879,7 +878,7 @@ int sunxi_g2d_blt(void               *self,
     tmp.src_image_h.clip_rect.h = h;
 
     tmp.dst_image_h.use_phy_addr = 1;
-    tmp.dst_image_h.width = 1280;
+    tmp.dst_image_h.width = 800;
     tmp.dst_image_h.height = 480;
     tmp.dst_image_h.align[0] = 4;
     tmp.dst_image_h.laddr[0] = shadow_paddr;
@@ -942,7 +941,7 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   memset(&tmp, 0, sizeof(tmp));
   tmp.flag_h = G2D_ROT_90;
   tmp.src_image_h.use_phy_addr = 1;
-  tmp.src_image_h.width = 1280;
+  tmp.src_image_h.width = 800;
   tmp.src_image_h.height = 480;
   tmp.src_image_h.align[0] = 4;
   tmp.src_image_h.laddr[0] = src_paddr;
@@ -951,12 +950,12 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   tmp.src_image_h.mode = G2D_PIXEL_ALPHA;
   tmp.src_image_h.clip_rect.x = 0;
   tmp.src_image_h.clip_rect.y = 0;
-  tmp.src_image_h.clip_rect.w = 1280;
+  tmp.src_image_h.clip_rect.w = 800;
   tmp.src_image_h.clip_rect.h = 480;
 
   tmp.dst_image_h.use_phy_addr = 1;
   tmp.dst_image_h.width = 480;
-  tmp.dst_image_h.height = 1280;
+  tmp.dst_image_h.height = 800;
   tmp.dst_image_h.align[0] = 4;
   tmp.dst_image_h.laddr[0] = dst_paddr;
   tmp.dst_image_h.alpha = 0xFF;
@@ -965,7 +964,7 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   tmp.dst_image_h.clip_rect.x = 0;
   tmp.dst_image_h.clip_rect.y = 0;
   tmp.dst_image_h.clip_rect.w = 480;
-  tmp.dst_image_h.clip_rect.h = 1280;
+  tmp.dst_image_h.clip_rect.h = 800;
 
   if(ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &tmp) < 0) {
     return -1;
