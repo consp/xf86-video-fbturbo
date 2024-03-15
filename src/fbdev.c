@@ -698,7 +698,7 @@ FBDevCreateScreenResources(ScreenPtr pScreen)
     pPixmap = pScreen->GetScreenPixmap(pScreen);
 
     if (!shadowAdd(pScreen, pPixmap, fPtr->rotate ?
-		   shadowUpdateRotatePackedWeak() : shadowUpdatePackedWeak(),
+		   fbdevUpdateRotatePacked : fbdevUpdatePacked,
 		   FBDevWindowLinear, fPtr->rotate, NULL)) {
 	return FALSE;
     }
