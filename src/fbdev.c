@@ -55,10 +55,6 @@
 #include "backing_store_tuner.h"
 #include "sunxi_video.h"
 
-#ifdef HAVE_LIBUMP
-#include "sunxi_mali_ump_dri2.h"
-#endif
-
 /* for visuals */
 #include "fb.h"
 
@@ -166,8 +162,6 @@ typedef enum {
 	OPTION_DEBUG,
 	OPTION_HW_CURSOR,
 	OPTION_SW_CURSOR,
-	OPTION_DRI2,
-	OPTION_DRI2_OVERLAY,
 	OPTION_SWAPBUFFERS_WAIT,
 	OPTION_ACCELMETHOD,
 	OPTION_USE_BS,
@@ -182,8 +176,6 @@ static const OptionInfoRec FBDevOptions[] = {
 	{ OPTION_DEBUG,		"debug",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_HW_CURSOR,	"HWCursor",	OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_SW_CURSOR,	"SWCursor",	OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_DRI2,		"DRI2",		OPTV_BOOLEAN,	{0},	FALSE },
-	{ OPTION_DRI2_OVERLAY,	"DRI2HWOverlay",OPTV_BOOLEAN,	{0},	FALSE },
 	{ OPTION_SWAPBUFFERS_WAIT,"SwapbuffersWait",OPTV_BOOLEAN,{0},	FALSE },
 	{ OPTION_ACCELMETHOD,	"AccelMethod",	OPTV_STRING,	{0},	FALSE },
 	{ OPTION_USE_BS,	"UseBackingStore",OPTV_BOOLEAN,	{0},	FALSE },
@@ -1098,37 +1090,6 @@ FBDevScreenInit(SCREEN_INIT_ARGS_DECL)
 		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
 		           "failed to enable hardware cursor\n");
 	}
-
-#ifdef HAVE_LIBUMP
-	if (xf86ReturnOptValBool(fPtr->Options, OPTION_DRI2, TRUE)) {
-
-	    fPtr->SunxiMaliDRI2_private = SunxiMaliDRI2_Init(pScreen,
-		xf86ReturnOptValBool(fPtr->Options, OPTION_DRI2_OVERLAY, TRUE),
-		xf86ReturnOptValBool(fPtr->Options, OPTION_SWAPBUFFERS_WAIT, TRUE));
-
-	    if (fPtr->SunxiMaliDRI2_private) {
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "using DRI2 integration for Mali GPU (UMP buffers)\n");
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "Mali binary drivers can only accelerate EGL/GLES\n");
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "so AIGLX/GLX is expected to fail or fallback to software\n");
-	    }
-	    else {
-		xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-		           "failed to enable DRI2 integration for Mali GPU\n");
-	    }
-	}
-	else {
-	    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-	               "DRI2 integration for Mali GPU is disabled in xorg.conf\n");
-	}
-#else
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-	           "no 3D acceleration because the driver has been compiled without libUMP\n");
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-	           "if this is wrong and needs to be fixed, please check ./configure log\n");
-#endif
 
 	TRACE_EXIT("FBDevScreenInit");
 
