@@ -1,3 +1,2 @@
 all:
-	cc main.c
-	sudo ./a.out
+	 ../../../build_output/buildroot/variant-klipperscreen/host/bin/arm-buildroot-linux-gnueabihf-gcc main.c

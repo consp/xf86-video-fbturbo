@@ -21,11 +21,8 @@
 # Process this file with autoconf to produce a configure script
 
 # Initialize Autoconf
-AC_PREREQ([2.60])
-AC_INIT([xf86-video-fbturbo],
-        [0.5.1],
-        [https://github.com/ssvb/xf86-video-fbturbo],
-        [xf86-video-fbturbo])
+AC_PREREQ([2.71])
+AC_INIT([xf86-video-fbturbo],[0.5.1],[https://github.com/ssvb/xf86-video-fbturbo],[xf86-video-fbturbo])
 AC_CONFIG_SRCDIR([Makefile.am])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR(.)

@@ -86,6 +86,7 @@ sunxi_disp_t *sunxi_disp_init(const char *device, int fb_fd, void *xserver_fbmem
 
     /* maybe it's even not a sunxi hardware */
     if (ctx->fd_disp < 0) {
+        xf86DrvMsg(0, X_INFO, "sunxi_disp_init: fd_disp < 0\n");
         free(ctx);
         return NULL;
     }
@@ -94,6 +95,7 @@ sunxi_disp_t *sunxi_disp_init(const char *device, int fb_fd, void *xserver_fbmem
 
     ctx->fd_fb = fb_fd;
     if (ctx->fd_fb < 0) {
+        xf86DrvMsg(0, X_INFO, "sunxi_disp_init: fd_disp < 0\n");
         close(ctx->fd_disp);
         free(ctx);
         return NULL;
@@ -102,6 +104,7 @@ sunxi_disp_t *sunxi_disp_init(const char *device, int fb_fd, void *xserver_fbmem
     if (ioctl(ctx->fd_fb, FBIOGET_VSCREENINFO, &fb_var) < 0 ||
         ioctl(ctx->fd_fb, FBIOGET_FSCREENINFO, &fb_fix) < 0)
     {
+        xf86DrvMsg(0, X_INFO, "sunxi_disp_init: VSCREENINFO FSCREENINFO < 0\n");
         close(ctx->fd_disp);
         free(ctx);
         return NULL;
@@ -122,8 +125,8 @@ sunxi_disp_t *sunxi_disp_init(const char *device, int fb_fd, void *xserver_fbmem
         return NULL;
     }
 
-    xf86DrvMsg(0, X_INFO, "sunxi_disp_init: check fb size ok. paddr=%lx size=%u h=%d\n", 
-        ctx->framebuffer_paddr, ctx->framebuffer_size, ctx->framebuffer_height);
+    xf86DrvMsg(0, X_INFO, "sunxi_disp_init: check fb size ok. paddr=%lx size=%u h=%d w=%d\n", 
+        ctx->framebuffer_paddr, ctx->framebuffer_size, ctx->framebuffer_height, ctx->xres * ctx->bits_per_pixel / 8);
 
     if (ctx->xserver_fbmem) {
         /* use already existing mapping */
@@ -183,6 +186,7 @@ sunxi_disp_t *sunxi_disp_init(const char *device, int fb_fd, void *xserver_fbmem
 
 int sunxi_disp_close(sunxi_disp_t *ctx)
 {
+    xf86DrvMsg(0, X_INFO, "sunxi_disp_close: begin\n");
     if (ctx->fd_disp >= 0) {
         if (ctx->fd_g2d >= 0) {
             close(ctx->fd_g2d);
@@ -201,6 +205,7 @@ int sunxi_disp_close(sunxi_disp_t *ctx)
 
 static int sunxi_layer_get_config(sunxi_disp_t *ctx, int layer_id, struct disp_layer_info *p_info)
 {
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_get_config: begin\n");
     unsigned long arg[3];
 
     if (layer_id < 0)
@@ -217,6 +222,7 @@ static int sunxi_layer_get_config(sunxi_disp_t *ctx, int layer_id, struct disp_l
 
 int sunxi_layer_reserve(sunxi_disp_t *ctx)
 {
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_reserve: begin\n");
   unsigned long arg[3];
   struct disp_layer_info info[4];
   struct disp_layer_config config;
@@ -247,14 +253,14 @@ int sunxi_layer_reserve(sunxi_disp_t *ctx)
   config.layer_id = ctx->layer_id;//layer index in the blending channel
   config.enable = 1;
   config.info.mode = LAYER_MODE_BUFFER;
-  config.info.fb.addr[0] = (unsigned long long)ctx->framebuffer_paddr; //FB 地址
+  config.info.fb.addr[0] = (unsigned long long)ctx->framebuffer_paddr; //FB address
   config.info.fb.size[0].width = 1;
   config.info.fb.align[0] = 4;//bytes
   config.info.fb.format = DISP_FORMAT_ARGB_8888; //DISP_FORMAT_YUV420_P
   config.info.fb.crop.x = 0;
   config.info.fb.crop.y = 0;
-  config.info.fb.crop.width = ((unsigned long)1)<<32;//定点小数。高32bit 为整数，低32bit 为小数
-  config.info.fb.crop.height= ((unsigned long)1)<<32;//定点小数。高32bit 为整数，低32bit 为小数
+  config.info.fb.crop.width = ((unsigned long long)1)<<32;//Fixed point decimal. The high 32 bits are integers, the low 32 bits are decimals
+  config.info.fb.crop.height= ((unsigned long long)1)<<32;//Fixed point decimal. The high 32 bits are integers, the low 32 bits are decimals
   config.info.fb.flags = DISP_BF_NORMAL;
   config.info.fb.scan = DISP_SCAN_PROGRESSIVE;
   config.info.alpha_mode = 1; //global pixel alpha
@@ -270,6 +276,7 @@ int sunxi_layer_reserve(sunxi_disp_t *ctx)
   arg[1] = (unsigned long)&config;
   arg[2] = 1; //one layer
   if (ioctl(ctx->fd_disp, DISP_LAYER_SET_CONFIG, (void*)arg) < 0) {
+        xf86DrvMsg(0, X_INFO, "sunxi_disp_layer: config set failed\n");
     return -1;
   }
   return ctx->layer_id;
@@ -282,6 +289,7 @@ int sunxi_layer_release(sunxi_disp_t *ctx)
   struct disp_layer_config config;
 
   PRINTLINE();
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_release: begin\n");
   memset(&config, 0, sizeof(struct disp_layer_config));
   config.channel = 0;//blending channel
   config.layer_id = 0;//layer index in the blending channel
@@ -322,6 +330,7 @@ int sunxi_layer_set_rgb_input_buffer(sunxi_disp_t *ctx,
   PRINTD(width);
   PRINTD(height);
   PRINTD(stride);
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_set_rgb_input_buffer: begin\n");
   return -1;
     //    __disp_fb_t fb;
     //    __disp_rect_t rect = { 0, 0, width, height };
@@ -384,6 +393,7 @@ int sunxi_layer_set_yuv420_input_buffer(sunxi_disp_t *ctx,
   PRINTD(stride);
   PRINTD(x_pixel_offset);
   PRINTD(y_pixel_offset);
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_set_yuv420_input_buffer: begin\n");
   return -1;
     //    __disp_fb_t fb;
     //    __disp_rect_t rect = { x_pixel_offset, y_pixel_offset, width, height };
@@ -427,6 +437,7 @@ int sunxi_layer_set_output_window(sunxi_disp_t *ctx, int x, int y, int w, int h)
   PRINTD(y);
   PRINTD(w);
   PRINTD(y);
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_set_output_window: begin\n");
   return -1;
   //      __disp_rect_t buf_rect = {
   //          ctx->layer_buf_x, ctx->layer_buf_y,
@@ -494,6 +505,7 @@ int sunxi_layer_set_output_window(sunxi_disp_t *ctx, int x, int y, int w, int h)
 
 int sunxi_layer_show(sunxi_disp_t *ctx)
 {
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_show: begin\n");
   return -1;
   //      uint64_t tmp[4];
 
@@ -513,6 +525,7 @@ int sunxi_layer_show(sunxi_disp_t *ctx)
 
 int sunxi_layer_hide(sunxi_disp_t *ctx)
 {
+    xf86DrvMsg(0, X_INFO, "sunxi_layer_hide: begin\n");
   return -1;
   //      int result;
   //      uint64_t tmp[4];
@@ -535,6 +548,7 @@ int sunxi_layer_hide(sunxi_disp_t *ctx)
 
 int sunxi_wait_for_vsync(sunxi_disp_t *ctx)
 {
+    xf86DrvMsg(0, X_INFO, "sunxi_wait_for_vsync: begin\n");
     return ioctl(ctx->fd_fb, FBIO_WAITFORVSYNC, 0);
 }
 
@@ -548,6 +562,7 @@ int sunxi_g2d_fill_a8r8g8b8(sunxi_disp_t *disp,
                             uint32_t      color)
 {
     g2d_fillrect tmp;
+    xf86DrvMsg(0, X_INFO, "sunxi_g2d_fill_a8r8g8b8: begin\n");
 
     if (disp->fd_g2d < 0)
         return -1;
@@ -624,6 +639,7 @@ int sunxi_g2d_blit_r5g6b5_in_three(sunxi_disp_t *disp, uint8_t *src_bits,
     uint8_t *dst_bits, int src_stride, int dst_stride, int src_x, int src_y,
     int dst_x, int dst_y, int w, int h)
 {
+    xf86DrvMsg(0, X_INFO, "sunxi_g2d_blit_r5g6b5_in_three: begin\n");
     g2d_blt tmp;
     /* Set up the invariant blit parameters. */
     tmp.flag                = G2D_BLT_NONE;
@@ -713,6 +729,7 @@ static inline int sunxi_g2d_try_fallback_blt(void               *self,
                                              int                 h)
 {
     sunxi_disp_t *disp = (sunxi_disp_t *)self;
+    xf86DrvMsg(0, X_INFO, "sunxi_g2d_try_fallback_blt: begin\n");
     if (disp->fallback_blt2d)
         return disp->fallback_blt2d->overlapped_blt(disp->fallback_blt2d->self,
                                                     src_bits, dst_bits,
@@ -755,12 +772,16 @@ int sunxi_g2d_blt(void               *self,
     sunxi_disp_t *disp = (sunxi_disp_t *)self;
     int blt_size_threshold;
     g2d_blt_h cmd;
-    uint8_t src_is_shadow = ((uint8_t *)src_bits - disp->framebuffer_addr) >= 800 * 480 * 4;
-    uint8_t dst_is_shadow = ((uint8_t *)dst_bits - disp->framebuffer_addr) >= 800 * 480 * 4;
+
+    xf86DrvMsg(0, X_INFO, "sunxi_g2d_blt: begin\n");
+    uint8_t src_is_shadow = (uint8_t *)src_bits >= disp->framebuffer_addr + disp->framebuffer_size;
+    uint8_t dst_is_shadow = (uint8_t *)dst_bits >= disp->framebuffer_addr + disp->framebuffer_size;
     uint8_t is_samebuffer = (src_bits == dst_bits);
     uint8_t x_is_overlapped = (src_x <= dst_x && dst_x < src_x + w) || (dst_x <= src_x && src_x < dst_x + w);
     uint8_t y_is_overlapped = (src_y <= dst_y && dst_y < src_y + h) || (dst_y <= src_y && src_y < dst_y + h);
-    unsigned long shadow_paddr = disp->framebuffer_paddr + 800 * 480 * 4;
+
+    unsigned long src_paddr = disp->framebuffer_paddr + ((uint8_t *)src_bits - disp->framebuffer_addr);
+    unsigned long dst_paddr = disp->framebuffer_paddr + ((uint8_t *)dst_bits - disp->framebuffer_addr);
 
     static uint32_t *tmp_bits = NULL;
     static size_t tmp_sz = 0;
@@ -906,10 +927,10 @@ int sunxi_g2d_blt(void               *self,
     memset(&cmd, 0, sizeof(cmd));
     cmd.flag_h = G2D_ROT_0;
     cmd.src_image_h.use_phy_addr = 1;
-    cmd.src_image_h.width = 800;
-    cmd.src_image_h.height = 480;
+    cmd.src_image_h.width = disp->xres;
+    cmd.src_image_h.height = disp->framebuffer_height;
     cmd.src_image_h.align[0] = 4;
-    cmd.src_image_h.laddr[0] = shadow_paddr;
+    cmd.src_image_h.laddr[0] = src_paddr;
     cmd.src_image_h.alpha = 0xFF;
     cmd.src_image_h.format = G2D_FORMAT_ARGB8888;
     cmd.src_image_h.mode = G2D_PIXEL_ALPHA;
@@ -919,10 +940,10 @@ int sunxi_g2d_blt(void               *self,
     cmd.src_image_h.clip_rect.h = h;
 
     cmd.dst_image_h.use_phy_addr = 1;
-    cmd.dst_image_h.width = 800;
-    cmd.dst_image_h.height = 480;
+    cmd.dst_image_h.width = disp->xres;
+    cmd.dst_image_h.height = disp->framebuffer_height;
     cmd.dst_image_h.align[0] = 4;
-    cmd.dst_image_h.laddr[0] = shadow_paddr;
+    cmd.dst_image_h.laddr[0] = dst_paddr;
     cmd.dst_image_h.alpha = 0xFF;
     cmd.dst_image_h.format = G2D_FORMAT_ARGB8888;
     cmd.dst_image_h.mode = G2D_PIXEL_ALPHA;
@@ -939,12 +960,13 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   unsigned long src_paddr = disp->framebuffer_paddr + (src_vaddr - disp->framebuffer_addr);
   unsigned long dst_paddr = disp->framebuffer_paddr + (dst_vaddr - disp->framebuffer_addr);
 
+    xf86DrvMsg(0, X_INFO, "sunxi_g2d_rotate_fullscreen: begin\n");
   g2d_blt_h cmd;
   memset(&cmd, 0, sizeof(cmd));
   cmd.flag_h = G2D_ROT_90;
   cmd.src_image_h.use_phy_addr = 1;
-  cmd.src_image_h.width = 800;
-  cmd.src_image_h.height = 480;
+  cmd.src_image_h.width = disp->xres;
+  cmd.src_image_h.height = disp->framebuffer_height;
   cmd.src_image_h.align[0] = 4;
   cmd.src_image_h.laddr[0] = src_paddr;
   cmd.src_image_h.alpha = 0xFF;
@@ -952,12 +974,12 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   cmd.src_image_h.mode = G2D_PIXEL_ALPHA;
   cmd.src_image_h.clip_rect.x = 0;
   cmd.src_image_h.clip_rect.y = 0;
-  cmd.src_image_h.clip_rect.w = 800;
-  cmd.src_image_h.clip_rect.h = 480;
+  cmd.src_image_h.clip_rect.w = disp->xres;
+  cmd.src_image_h.clip_rect.h = disp->framebuffer_height;
 
   cmd.dst_image_h.use_phy_addr = 1;
-  cmd.dst_image_h.width = 480;
-  cmd.dst_image_h.height = 800;
+  cmd.dst_image_h.width = disp->framebuffer_height;
+  cmd.dst_image_h.height = disp->xres;
   cmd.dst_image_h.align[0] = 4;
   cmd.dst_image_h.laddr[0] = dst_paddr;
   cmd.dst_image_h.alpha = 0xFF;
@@ -965,8 +987,8 @@ int sunxi_g2d_rotate_fullscreen(void *self, uint8_t* src_vaddr, uint8_t* dst_vad
   cmd.dst_image_h.mode = G2D_PIXEL_ALPHA;
   cmd.dst_image_h.clip_rect.x = 0;
   cmd.dst_image_h.clip_rect.y = 0;
-  cmd.dst_image_h.clip_rect.w = 480;
-  cmd.dst_image_h.clip_rect.h = 800;
+  cmd.dst_image_h.clip_rect.w = disp->framebuffer_height;
+  cmd.dst_image_h.clip_rect.h = disp->xres;
 
   if(ioctl(disp->fd_g2d, G2D_CMD_BITBLT_H, &cmd) < 0) {
     return -1;

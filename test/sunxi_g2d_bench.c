@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
     int i, pos = 0, framenum = 0, yoffs, color;
     void *addr;
 
-    disp = sunxi_disp_init("/dev/fb0", NULL);
+    disp = sunxi_disp_init("/dev/fb0", 0, 0xb5f72000);
     /*
      * setup the signal handler to catch Ctrl-C in order to prevent leaking
      * the layer on process termination (that's a kernel bug).
